@@ -16,7 +16,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - app_net
+      - internal
 
   backend:
     build:
@@ -67,7 +67,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - app_net
+      - internal
 
   frontend:
     build:
@@ -108,7 +108,7 @@ services:
         - action: rebuild
           path: ./frontend/postcss.config.js
     networks:
-      - app_net
+      - internal
 
   proxy:
     image: nginx:1.27-alpine
@@ -126,12 +126,12 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - app_net
+      - internal
 
 volumes:
   postgres_data_dev:
   frontend_node_modules:
 
 networks:
-  app_net:
+  internal:
     driver: bridge
