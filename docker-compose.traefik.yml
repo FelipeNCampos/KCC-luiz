@@ -1,0 +1,22 @@
+services:
+  proxy:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.constraint-label=${TRAEFIK_CONSTRAINT_LABEL:-traefik-public}"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik-public}"
+      - "traefik.http.routers.kcc.rule=Host(`${APP_DOMAIN:-kccflats.com}`) || Host(`${WWW_APP_DOMAIN:-www.kccflats.com}`)"
+      - "traefik.http.routers.kcc.entrypoints=${TRAEFIK_HTTPS_ENTRYPOINT:-https}"
+      - "traefik.http.routers.kcc.tls=true"
+      - "traefik.http.routers.kcc.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-le}"
+      - "traefik.http.routers.kcc-http.rule=Host(`${APP_DOMAIN:-kccflats.com}`) || Host(`${WWW_APP_DOMAIN:-www.kccflats.com}`)"
+      - "traefik.http.routers.kcc-http.entrypoints=${TRAEFIK_HTTP_ENTRYPOINT:-http}"
+      - "traefik.http.routers.kcc-http.middlewares=${TRAEFIK_HTTPS_REDIRECT_MIDDLEWARE:-https-redirect}"
+      - "traefik.http.services.kcc.loadbalancer.server.port=80"
+    networks:
+      - internal
+      - traefik-public
+
+networks:
+  traefik-public:
+    name: ${TRAEFIK_NETWORK:-traefik-public}
+    external: true
