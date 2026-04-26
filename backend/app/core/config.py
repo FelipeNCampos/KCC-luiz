@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     admin_name: str | None = None
     admin_email: str | None = None
     admin_password: str | None = None
+    secondary_user_name: str | None = None
+    secondary_user_email: str | None = None
+    secondary_user_password: str | None = None
+    secondary_user_role: str = "admin"
+    secondary_user_job_title: str | None = None
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None

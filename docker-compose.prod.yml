@@ -35,6 +35,7 @@ services:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
+             python -m app.scripts.seed_admin &&
              gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 2 --access-logfile - --error-logfile -"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)\""]
