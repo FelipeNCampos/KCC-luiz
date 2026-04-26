@@ -22,3 +22,7 @@ export function canAccessTasks(user: User | null) {
 export function canManageTasks(user: User | null) {
   return user?.role === "admin";
 }
+
+export function canManageUsers(user: User | null) {
+  return user?.role === "admin";
+}

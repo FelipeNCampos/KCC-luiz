@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import { AdminOnlyRoute } from "../components/AdminOnlyRoute";
 import { AdminRoute } from "../components/AdminRoute";
 import { PrivateRoute } from "../components/PrivateRoute";
 import { TasksRoute } from "../components/TasksRoute";
@@ -9,6 +10,7 @@ import { DashboardPage } from "../pages/DashboardPage";
 import { LoginPage } from "../pages/LoginPage";
 import { RegisterPage } from "../pages/RegisterPage";
 import { TasksPage } from "../pages/TasksPage";
+import { UsersPage } from "../pages/UsersPage";
 import { canAccessOverview, canAccessTasks } from "../utils/permissions";
 
 function HomeRoute() {
@@ -52,6 +54,14 @@ export function AppRoutes() {
           <TasksRoute>
             <TasksPage />
           </TasksRoute>
+        }
+      />
+      <Route
+        path="/users"
+        element={
+          <AdminOnlyRoute>
+            <UsersPage />
+          </AdminOnlyRoute>
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />

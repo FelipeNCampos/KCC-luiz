@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { Building2, CircleDollarSign, LayoutDashboard, ListChecks, LogOut, Settings2 } from "lucide-react";
+import { Building2, CircleDollarSign, LayoutDashboard, ListChecks, LogOut, Settings2, UsersRound } from "lucide-react";
 
 import { useAuth } from "../hooks/useAuth";
 import { TasksSettingsModal } from "./TasksSettingsModal";
 import { tasksService } from "../services/tasks";
-import { canAccessCashFlow, canAccessOverview, canAccessTasks, canManageTasks } from "../utils/permissions";
+import { canAccessCashFlow, canAccessOverview, canAccessTasks, canManageTasks, canManageUsers } from "../utils/permissions";
 
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
   `flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition-all duration-200 ${
@@ -85,6 +85,13 @@ export function SidebarMenu() {
                 </button>
               ) : null}
             </div>
+          ) : null}
+
+          {canManageUsers(user) ? (
+            <NavLink to="/users" className={navItemClass}>
+              <UsersRound size={18} strokeWidth={2.1} />
+              <span>Users</span>
+            </NavLink>
           ) : null}
         </nav>
 

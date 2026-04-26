@@ -16,6 +16,10 @@ class UserRepository:
         statement = select(User).where(User.email == email.lower())
         return self.db.scalar(statement)
 
+    def list_all(self) -> list[User]:
+        statement = select(User).order_by(User.name.asc(), User.id.asc())
+        return list(self.db.scalars(statement).all())
+
     def list_by_role(self, role: str) -> list[User]:
         statement = select(User).where(User.role == role).order_by(User.name.asc(), User.id.asc())
         return list(self.db.scalars(statement).all())
