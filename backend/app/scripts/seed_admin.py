@@ -1,6 +1,8 @@
 from app.core.config import settings
 from app.core.security import hash_password
 from app.db.session import SessionLocal
+from app.models.cashflow import CashFlowRecord  # noqa: F401
+from app.models.task import Task, TaskAssignment, TaskMedia, TaskMessage, TaskModuleSettings  # noqa: F401
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserCreate
 
