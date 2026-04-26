@@ -32,12 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await authService.login(payload);
     setUser(response.user);
     setStatus("authenticated");
+    return response;
   }, []);
 
   const register = useCallback(async (payload: RegisterPayload) => {
     const response = await authService.register(payload);
     setUser(response.user);
     setStatus("authenticated");
+    return response;
   }, []);
 
   const logout = useCallback(async () => {

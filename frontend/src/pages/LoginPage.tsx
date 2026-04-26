@@ -102,8 +102,8 @@ export function LoginPage() {
     setErrors((current) => ({ ...current, form: undefined }));
 
     try {
-      await login({ email, password });
-      navigate("/", { replace: true });
+      const response = await login({ email, password });
+      navigate(response.user.role === "employee" ? "/tasks" : "/", { replace: true });
     } catch (error) {
       const message =
         error instanceof AxiosError && error.response?.status === 401

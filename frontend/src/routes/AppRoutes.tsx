@@ -3,11 +3,27 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminRoute } from "../components/AdminRoute";
 import { PrivateRoute } from "../components/PrivateRoute";
 import { TasksRoute } from "../components/TasksRoute";
+import { useAuth } from "../hooks/useAuth";
 import { CashFlowPage } from "../pages/CashFlowPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { LoginPage } from "../pages/LoginPage";
 import { RegisterPage } from "../pages/RegisterPage";
 import { TasksPage } from "../pages/TasksPage";
+import { canAccessOverview, canAccessTasks } from "../utils/permissions";
+
+function HomeRoute() {
+  const { user } = useAuth();
+
+  if (canAccessOverview(user)) {
+    return <DashboardPage />;
+  }
+
+  if (canAccessTasks(user)) {
+    return <Navigate to="/tasks" replace />;
+  }
+
+  return <Navigate to="/login" replace />;
+}
 
 export function AppRoutes() {
   return (
@@ -18,7 +34,7 @@ export function AppRoutes() {
         path="/"
         element={
           <PrivateRoute>
-            <DashboardPage />
+            <HomeRoute />
           </PrivateRoute>
         }
       />

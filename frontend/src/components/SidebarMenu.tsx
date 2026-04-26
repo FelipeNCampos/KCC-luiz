@@ -5,7 +5,7 @@ import { Building2, CircleDollarSign, LayoutDashboard, ListChecks, LogOut, Setti
 import { useAuth } from "../hooks/useAuth";
 import { TasksSettingsModal } from "./TasksSettingsModal";
 import { tasksService } from "../services/tasks";
-import { canAccessCashFlow, canAccessTasks, canManageTasks } from "../utils/permissions";
+import { canAccessCashFlow, canAccessOverview, canAccessTasks, canManageTasks } from "../utils/permissions";
 
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
   `flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition-all duration-200 ${
@@ -49,10 +49,12 @@ export function SidebarMenu() {
         </div>
 
         <nav className="grid gap-1">
-          <NavLink to="/" className={navItemClass}>
-            <LayoutDashboard size={18} strokeWidth={2.1} />
-            <span>Overview</span>
-          </NavLink>
+          {canAccessOverview(user) ? (
+            <NavLink to="/" className={navItemClass}>
+              <LayoutDashboard size={18} strokeWidth={2.1} />
+              <span>Overview</span>
+            </NavLink>
+          ) : null}
 
           {canAccessCashFlow(user) ? (
             <NavLink to="/cash-flow" className={navItemClass}>
