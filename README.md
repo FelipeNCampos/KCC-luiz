@@ -134,7 +134,8 @@ Acesse:
 - App via proxy: `http://localhost:18081`
 - Frontend Vite direto: `http://localhost:15173`
 - Backend direto: `http://localhost:18000`
-- Swagger: `http://localhost:18000/docs`
+- Swagger via proxy: `http://localhost:18081/docs`
+- Swagger direto no backend: `http://localhost:18000/docs`
 
 Rodar migrations manualmente:
 
