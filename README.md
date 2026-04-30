@@ -1,234 +1,181 @@
-# KCC Luiz
+# KCC Flats Control
 
-Sistema web full stack com React, FastAPI, PostgreSQL, Docker Compose e Nginx, pronto para desenvolvimento local e deploy em VPS.
+Uma plataforma completa para gestao operacional, financeira e administrativa de flats, condominios e propriedades com rotinas recorrentes.
 
-## 1. Visão Geral da Solução
+O KCC Flats Control centraliza cashflow, tarefas, acessos por QR Code, registros de cleaner e caretaker, invoices, relatorios e usuarios em uma experiencia simples, profissional e pronta para o dia a dia da operacao.
 
-A aplicação é dividida em frontend, backend, infraestrutura e documentação. O frontend React consome a API pelo caminho relativo `/api/v1`, e o Nginx interno do stack encaminha `/api/` para o backend e `/` para o frontend.
+## O Que O Software Entrega
 
-A estratégia de produção escolhida é subdomínio dedicado, por exemplo `novoapp.seudominio.com`. Como já existe outro sistema usando 80/443 na VPS, este stack não tenta assumir essas portas. Em produção, ele publica apenas `127.0.0.1:18080`, e o Nginx principal da VPS encaminha o tráfego HTTPS para essa porta local.
+O sistema foi pensado para reduzir trabalho manual, evitar perda de informacao e dar visibilidade real sobre tudo que acontece na propriedade.
 
-## 2. Estrutura de Pastas
+Com ele, a gerencia acompanha entradas e saidas financeiras, controla tarefas da equipe, monitora horas trabalhadas, gera QR Codes para registros publicos, emite invoices e envia relatorios completos sem depender de planilhas soltas, mensagens perdidas ou controles paralelos.
 
-```text
-.
-├── backend
-│   ├── alembic
-│   ├── app
-│   │   ├── api
-│   │   ├── core
-│   │   ├── db
-│   │   ├── models
-│   │   ├── repositories
-│   │   ├── schemas
-│   │   ├── scripts
-│   │   └── services
-│   └── tests
-├── frontend
-│   └── src
-│       ├── components
-│       ├── context
-│       ├── hooks
-│       ├── pages
-│       ├── routes
-│       ├── services
-│       └── styles
-├── infra
-│   ├── nginx
-│   └── scripts
-└── docs
-```
+## Principais Vantagens
 
-## 3. Arquivos Backend
+- Centraliza a gestao da propriedade em uma unica plataforma.
+- Reduz erros operacionais causados por controles manuais.
+- Facilita auditoria de pagamentos, comprovantes, horas e tarefas.
+- Da mais transparencia para gestores, administradores e equipe.
+- Economiza tempo em rotinas repetitivas de relatorios e registros.
+- Melhora o controle sobre cleaners, caretakers, contractors e funcionarios.
+- Permite acompanhamento rapido por dashboards, cards, graficos e historicos.
+- Ajuda a transformar registros do dia a dia em dados uteis para decisao.
 
-Principais arquivos:
+## Cashflow
 
-- `backend/app/main.py`: cria a aplicação FastAPI, CORS, healthcheck, handlers e rotas versionadas.
-- `backend/app/api/v1/routers/auth.py`: cadastro, login, refresh, logout e `/me`.
-- `backend/app/api/deps.py`: dependency de autenticação e base para autorização por papéis.
-- `backend/app/core/security.py`: hash Argon2 e criação/validação de JWT.
-- `backend/app/services/auth_service.py`: regra de autenticação e emissão de tokens.
-- `backend/app/repositories/user_repository.py`: acesso ao modelo de usuário.
-- `backend/app/models/user.py`: tabela `users`.
-- `backend/alembic/versions/0001_initial_users.py`: migration inicial.
-- `backend/tests/test_auth.py`: teste básico do fluxo de autenticação.
+O modulo de cashflow permite controlar todas as entradas e saidas financeiras da operacao.
 
-Rotas:
+Recursos disponiveis:
 
-- `GET /health`
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/refresh`
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/auth/me`
-- `GET /api/v1/users/me`
-- Swagger em `/docs`
+- Registro de receitas e despesas.
+- Controle por data, valor, comentarios e flat.
+- Anexo de invoice ou comprovante em imagem ou PDF.
+- Visualizacao e atualizacao de midias de invoice.
+- Edicao de comentarios e flat diretamente na tabela.
+- Saldo mensal e saldo por lancamento.
+- Busca por descricao ou flat.
+- Exclusao controlada de registros.
+- Relatorios por intervalo de meses.
+- Previa do relatorio antes do envio.
+- Envio de relatorio por email.
+- Relatorio em PDF com resumo financeiro, tabela de registros, tabela opcional de invoices e midias centralizadas uma por pagina.
 
-## 4. Arquivos Frontend
+Beneficio direto: a gerencia ganha clareza financeira e consegue fechar periodos com muito menos retrabalho.
 
-Principais arquivos:
+## Invoices
 
-- `frontend/src/services/api.ts`: cliente Axios com `withCredentials`, bearer token e refresh automático.
-- `frontend/src/context/AuthContext.tsx`: estado global de autenticação.
-- `frontend/src/components/PrivateRoute.tsx`: proteção de rotas privadas.
-- `frontend/src/pages/LoginPage.tsx`: login com validação e estados de erro.
-- `frontend/src/pages/RegisterPage.tsx`: cadastro com validação.
-- `frontend/src/pages/DashboardPage.tsx`: tela inicial autenticada.
-- `frontend/src/styles/index.css`: layout responsivo e profissional.
-- `frontend/vite.config.ts`: proxy local de `/api` para o backend.
+O sistema oferece emissao de invoices com visual profissional, ideal para servicos de cleaner, caretaker e outros trabalhos recorrentes.
 
-O access token fica em memória. O refresh token fica em cookie httpOnly, reduzindo exposição a JavaScript. Ao recarregar a página, o app chama `/auth/refresh` para recuperar uma sessão ativa.
+Recursos disponiveis:
 
-## 5. Arquivos Docker
+- Criacao de invoice com numero, data, descricao, flat, horas e valor.
+- Calculo automatico do total devido.
+- Layout visual pronto para apresentar ou imprimir.
+- Inclusao de midia ou comprovante.
+- Envio da invoice para o cashflow como registro financeiro.
+- Padrao de apresentacao claro para clientes, proprietarios e administradores.
 
-- `backend/Dockerfile`: targets `development` e `production`.
-- `frontend/Dockerfile`: target de desenvolvimento com Vite e produção com Nginx estático.
-- `docker-compose.yml`: ambiente local com portas `5432`, `8000`, `5173` e proxy em `8080`.
-- `docker-compose.prod.yml`: produção com banco e serviços internos; publica apenas o proxy em `127.0.0.1:18080`.
+Beneficio direto: invoices deixam de ser uma tarefa manual e passam a fazer parte do fluxo financeiro.
 
-## 6. Arquivos Nginx
+## Cleaner
 
-- `infra/nginx/app.conf`: Nginx interno do stack. Encaminha `/api/` para `backend:8000` e `/` para `frontend:80`.
-- `frontend/nginx.conf`: serve os arquivos do React com fallback para `index.html`.
-- `infra/nginx/main-vps-server-block.conf`: exemplo de server block para o Nginx principal da VPS.
+O modulo Cleaner foi desenhado para controle simples de entrada, saida e horas trabalhadas.
 
-O fallback de SPA acontece no Nginx do frontend, então rotas como `/dashboard` podem ser servidas pelo React Router.
+Recursos disponiveis:
 
-## 7. `.env.example`
+- QR Codes publicos para registro de cleaner.
+- Fluxo sem login para quem executa o trabalho.
+- Registro de IN e OUT por flat.
+- Flats padrao: Flat 50, Flat 51 e Flat 52.
+- Painel de gestao para analisar historico de registros.
+- Cards de horas mensais, meta mensal, horas restantes no mes e horas restantes na semana.
+- Grafico de horas por dia.
+- Grafico de horas por semana.
+- Definicao de meta mensal de horas.
+- Controle visual do progresso contra a meta.
+- Emissao de invoices com base nas horas registradas.
 
-Copie o arquivo:
+Beneficio direto: a gerencia sabe exatamente quando o cleaner entrou, saiu, quanto trabalhou e quanto falta para atingir a meta.
 
-```bash
-cp .env.example .env
-```
+## Caretaker / Contractor
 
-Variáveis mais importantes:
+O modulo Caretaker organiza registros de prestadores, contractors e trabalhos executados nos flats.
 
-- `SECRET_KEY`: segredo longo para JWT.
-- `DATABASE_URL`: URL SQLAlchemy do PostgreSQL.
-- `CORS_ORIGINS`: origens permitidas.
-- `COOKIE_SECURE`: `true` em produção com HTTPS.
-- `APP_DOMAIN`: subdomínio final em produção.
-- `PUBLIC_HTTP_PORT`: porta local exposta pelo stack de produção, por padrão `127.0.0.1:18080`.
+Recursos disponiveis:
 
-## 8. README de Execução
+- QR Code publico para formulario de caretaker.
+- Registro sem login para entrada e saida.
+- Selecao de Flat 50, Flat 51 ou Flat 52.
+- Registro de nome, empresa, telefone e descricao do trabalho.
+- Controle de trabalhos abertos e finalizados.
+- Dashboard de horas por dia e por semana.
+- Cards de meta mensal, horas mensais, falta semanal e falta mensal.
+- Definicao de meta mensal de horas.
+- Emissao de invoices a partir dos registros.
+- Historico gerencial para acompanhar servicos executados.
 
-Desenvolvimento local:
+Beneficio direto: toda visita de prestador vira registro rastreavel, com horas, flat, descricao e possibilidade de cobranca.
 
-```bash
-cp .env.example .env
-docker compose up --build
-```
+## QR Codes
 
-Desenvolvimento com Docker Compose Watch:
+O sistema permite gerar QR Codes para facilitar registros em campo.
 
-```bash
-cp .env.example .env
-docker compose watch
-```
+Recursos disponiveis:
 
-O modo watch sincroniza mudanças em `backend/app`, `backend/tests` e `frontend/src`. Alterações em `package.json`, `package-lock.json`, `pyproject.toml` ou Dockerfiles disparam rebuild automático. O backend usa `uvicorn --reload` e o frontend usa o watch do Vite com polling habilitado para funcionar melhor em Docker no Windows.
+- QR Codes para Cleaner por flat.
+- QR Code para Caretaker.
+- Links publicos para formularios de entrada e saida.
+- Uso sem necessidade de login pelo cleaner ou contractor.
+- Ideal para colar nos flats e simplificar a rotina operacional.
 
-Acesse:
+Beneficio direto: quem executa o servico registra tudo pelo celular, sem depender da gerencia no momento da execucao.
 
-- App via proxy: `http://localhost:18081`
-- Frontend Vite direto: `http://localhost:15173`
-- Backend direto: `http://localhost:18000`
-- Swagger via proxy: `http://localhost:18081/docs`
-- Swagger direto no backend: `http://localhost:18000/docs`
+## Tasks
 
-Rodar migrations manualmente:
+O modulo de tarefas ajuda a organizar a rotina da equipe.
 
-```bash
-docker compose exec backend alembic upgrade head
-```
+Recursos disponiveis:
 
-Criar admin opcional:
+- Criacao e acompanhamento de tarefas.
+- Controle de responsaveis.
+- Status, prioridades e historico.
+- Comentarios e midias.
+- Controle de acesso para funcionarios.
+- Configuracao do modulo pela administracao.
 
-```bash
-docker compose exec backend python -m app.scripts.seed_admin
-```
+Beneficio direto: a equipe trabalha com mais clareza e a gerencia acompanha o andamento sem precisar cobrar por mensagens soltas.
 
-Testes:
+## Usuarios E Permissoes
 
-```bash
-docker compose exec backend pytest -q
-docker compose exec frontend npm run build
-```
+O sistema permite controlar quem acessa cada area.
 
-## 9. Instruções de Deploy na VPS
+Recursos disponiveis:
 
-1. Instale Docker e Docker Compose Plugin conforme `docs/deploy-vps.md`.
-2. Clone o projeto na VPS.
-3. Configure `.env` com valores reais.
-4. Garanta:
+- Perfis administrativos.
+- Acesso para managers.
+- Acesso para funcionarios.
+- Edicao de usuarios e permissoes.
+- Separacao de areas conforme responsabilidade.
 
-```env
-APP_ENV=production
-APP_DOMAIN=novoapp.seudominio.com
-COOKIE_SECURE=true
-CORS_ORIGINS=https://novoapp.seudominio.com
-PUBLIC_HTTP_PORT=127.0.0.1:18080
-```
+Beneficio direto: cada pessoa ve e usa apenas o que precisa, mantendo a operacao organizada e segura.
 
-5. Suba o stack:
+## Dashboards E Indicadores
 
-```bash
-docker compose -f docker-compose.prod.yml up -d --build
-```
+A plataforma transforma registros operacionais em informacoes visuais.
 
-6. Configure o Nginx principal usando `infra/nginx/main-vps-server-block.conf`.
-7. Emita ou renove o certificado:
+Recursos disponiveis:
 
-```bash
-sudo certbot --nginx -d novoapp.seudominio.com
-sudo systemctl reload nginx
-```
+- Cards de resumo financeiro e operacional.
+- Progresso de metas.
+- Graficos de horas por dia.
+- Graficos de horas por semana.
+- Historicos pesquisaveis.
+- Indicadores para acompanhamento rapido da gestao.
 
-Atualização:
+Beneficio direto: a tomada de decisao fica mais rapida, baseada em dados reais da rotina.
 
-```bash
-git pull
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml up -d --remove-orphans
-```
+## Para Quem O Sistema E Ideal
 
-## 10. Como Coexistir com Outro Sistema na Mesma VPS
+- Gestores de flats.
+- Administradores de propriedades.
+- Empresas que cuidam de manutencao e limpeza.
+- Condominios com controle de prestadores.
+- Operacoes com cleaners, caretakers e contractors recorrentes.
+- Negocios que precisam controlar cashflow, invoices e tarefas em um so lugar.
 
-O outro sistema continua dono das portas públicas 80 e 443 por meio do Nginx principal. Este novo stack roda isolado em Docker e expõe apenas uma porta local:
+## Resultado Para A Operacao
 
-```text
-Internet -> Nginx principal :443 -> http://127.0.0.1:18080 -> Nginx interno do stack -> frontend/backend
-```
+Com o KCC Flats Control, a gestao ganha uma central de comando para acompanhar dinheiro, pessoas, tarefas, horas e comprovantes.
 
-Isso evita conflito de portas e mantém a separação operacional. O Nginx principal decide pelo `server_name` qual sistema recebe o tráfego. Para o novo sistema, use `novoapp.seudominio.com`; para o sistema existente, preserve o server block atual.
+Menos planilhas.  
+Menos mensagens perdidas.  
+Menos retrabalho.  
+Mais controle, mais velocidade e mais profissionalismo.
 
-## Decisões Arquiteturais
+## Resumo Comercial
 
-- Subdomínio em vez de subpath: menos frágil para React Router, cookies e API.
-- Refresh token httpOnly: reduz o impacto de XSS sobre tokens longos.
-- Access token em memória: evita persistência em `localStorage`.
-- API versionada: permite evolução futura sem quebrar clientes.
-- Camadas no backend: melhora testabilidade e manutenção.
-- Compose separado para dev/prod: permite hot reload local e imagem otimizada em produção.
+O KCC Flats Control entrega uma operacao mais organizada, rastreavel e facil de vender para proprietarios, moradores e administradores.
 
-## Checklist Manual
+Ele ajuda a mostrar que cada servico foi registrado, cada hora foi contabilizada, cada invoice pode ser emitida, cada comprovante pode ser consultado e cada decisao pode ser tomada com mais confianca.
 
-- [ ] `docker compose up --build` inicia todos os serviços.
-- [ ] `GET /health` retorna `ok`.
-- [ ] Cadastro cria usuário.
-- [ ] Login retorna access token.
-- [ ] Reload do navegador mantém sessão via refresh cookie.
-- [ ] Logout limpa a sessão.
-- [ ] Swagger abre em `/docs`.
-- [ ] Produção não expõe PostgreSQL publicamente.
-- [ ] Nginx principal encaminha apenas o subdomínio novo para `127.0.0.1:18080`.
-
-## Próximos Passos
-
-- Persistir refresh tokens com hash, `jti`, expiração e revogação.
-- Adicionar RBAC por rota e tela.
-- Criar pipeline CI com testes e build.
-- Adicionar backup automático do PostgreSQL.
-- Instrumentar métricas e tracing.
-- Adicionar rate limit no Nginx ou backend.
+E uma solucao feita para quem quer administrar propriedades com padrao profissional.
