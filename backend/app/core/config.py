@@ -38,6 +38,20 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     smtp_from_email: str | None = None
     smtp_from_name: str = "KCC Luiz"
+    cleaner_status_sms_to: str | None = None
+    contractor_door_codes: str = (
+        '{"Merlin":"CZ1247","Northwood":"CX1249",'
+        '"Oak":"Back Door: CY1285\\nBoiler: CZ9612YX",'
+        '"Oak Lodge":"Back Door: CY1285\\nBoiler: CZ9612YX"}'
+    )
+
+    @property
+    def contractor_door_code_map(self) -> dict[str, str]:
+        try:
+            parsed = json.loads(self.contractor_door_codes)
+        except json.JSONDecodeError:
+            return {}
+        return {str(key): str(value) for key, value in parsed.items()}
 
     @field_validator("cookie_samesite")
     @classmethod

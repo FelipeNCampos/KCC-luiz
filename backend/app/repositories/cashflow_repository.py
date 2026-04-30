@@ -22,6 +22,12 @@ class CashFlowRepository:
         self.db.refresh(record)
         return record
 
+    def save(self, record: CashFlowRecord) -> CashFlowRecord:
+        self.db.add(record)
+        self.db.commit()
+        self.db.refresh(record)
+        return record
+
     def get_by_id(self, record_id: int) -> CashFlowRecord | None:
         return self.db.get(CashFlowRecord, record_id)
 
@@ -33,6 +39,14 @@ class CashFlowRepository:
         statement: Select[tuple[CashFlowRecord]] = (
             select(CashFlowRecord)
             .where(CashFlowRecord.record_date >= month_start, CashFlowRecord.record_date < month_end)
+            .order_by(CashFlowRecord.record_date.asc(), CashFlowRecord.id.asc())
+        )
+        return list(self.db.scalars(statement).all())
+
+    def list_range_records(self, start_date: date, end_date: date) -> list[CashFlowRecord]:
+        statement: Select[tuple[CashFlowRecord]] = (
+            select(CashFlowRecord)
+            .where(CashFlowRecord.record_date >= start_date, CashFlowRecord.record_date < end_date)
             .order_by(CashFlowRecord.record_date.asc(), CashFlowRecord.id.asc())
         )
         return list(self.db.scalars(statement).all())

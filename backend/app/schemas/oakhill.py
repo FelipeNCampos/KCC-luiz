@@ -1,0 +1,197 @@
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class PaginatedResponse(BaseModel):
+    data: list
+    count: int
+
+
+class BuildingRead(BaseModel):
+    id: str
+    nome: str
+    condominio_id: str
+
+
+class ContractorBuildingRead(BaseModel):
+    id: str
+    name: str
+
+
+class FuncionarioCreate(BaseModel):
+    status: bool = True
+    is_default: bool = False
+    nome: str
+    mobile: int | None = None
+    cargo: int
+    email: str | None = None
+    condominio_id: str
+
+
+class FuncionarioUpdate(BaseModel):
+    status: bool | None = None
+    is_default: bool | None = None
+    nome: str | None = None
+    mobile: int | None = None
+    cargo: int | None = None
+    email: str | None = None
+
+
+class FuncionarioRead(FuncionarioCreate):
+    id: str
+
+
+class AcessCreate(BaseModel):
+    status: bool = True
+    operacao: int
+    building_id: str
+    data: datetime | None = None
+
+
+class AcessUpdate(BaseModel):
+    status: bool | None = None
+    data: datetime | None = None
+    operacao: int | None = None
+    building_id: str | None = None
+
+
+class AcessRead(BaseModel):
+    id: str
+    status: bool
+    data: datetime
+    operacao: int
+    building_id: str
+    funcionario_id: str
+
+
+class AcessActiveRead(BaseModel):
+    has_open_session: bool
+    building_id: str | None = None
+
+
+class ContractorPublicVisit(BaseModel):
+    id: str
+    name: str
+    company: str
+    building_name: str
+    door_code: str | None = None
+    job_description: str
+    mobile: str
+    in_at: datetime
+    out_at: datetime | None = None
+    condominio_id: str
+
+
+class ContractorOpenVisit(BaseModel):
+    id: str
+    name: str
+    company: str
+    building_name: str
+    job_description: str
+    mobile: str
+    in_at: datetime
+
+
+class ContractorCheckIn(BaseModel):
+    condominio_id: str | None = None
+    name: str
+    company: str
+    building_id: str
+    job_description: str
+    mobile: str
+
+
+class ContractorCheckOut(BaseModel):
+    condominio_id: str | None = None
+    visit_id: str
+
+
+class ContractorVisitRead(BaseModel):
+    id: str
+    name: str
+    company: str
+    building_name: str
+    job_description: str
+    mobile: str
+    extra_media_name: str | None = None
+    extra_media_data: str | None = None
+    extra_media_2_name: str | None = None
+    extra_media_2_data: str | None = None
+    extra_media_3_name: str | None = None
+    extra_media_3_data: str | None = None
+    extra_media_4_name: str | None = None
+    extra_media_4_data: str | None = None
+    in_at: datetime
+    out_at: datetime | None = None
+    condominio_id: str
+
+
+class ContractorMediaUpdate(BaseModel):
+    extra_media_name: str | None = None
+    extra_media_data: str | None = None
+    extra_media_2_name: str | None = None
+    extra_media_2_data: str | None = None
+    extra_media_3_name: str | None = None
+    extra_media_3_data: str | None = None
+    extra_media_4_name: str | None = None
+    extra_media_4_data: str | None = None
+
+
+class ContractorHistoryCategoryCreate(BaseModel):
+    name: str
+
+
+class ContractorHistoryCategoryRead(BaseModel):
+    id: str
+    name: str
+    created_at: datetime
+    updated_at: datetime
+    condominio_id: str
+
+
+class ContractorHistoryWrite(BaseModel):
+    category_id: str
+    created_new_visit: bool = False
+    next_enabled: bool = False
+    next_interval_unit: Literal["week", "month"] | None = None
+    next_interval_value: int | None = None
+    contractor_visit_id: str | None = None
+    name: str | None = None
+    company: str | None = None
+    building_id: str | None = None
+    job_description: str | None = None
+    mobile: str | None = None
+    in_at: datetime | None = None
+    out_at: datetime | None = None
+
+
+class ContractorHistoryRead(BaseModel):
+    id: str
+    category_id: str
+    category_name: str
+    contractor_visit_id: str
+    created_new_visit: bool
+    next_enabled: bool
+    next_interval_unit: str | None
+    next_interval_value: int | None
+    next_job_at: datetime | None
+    next_notify_at: datetime | None
+    next_notification_sent_at: datetime | None
+    name: str
+    company: str
+    building_name: str
+    job_description: str
+    mobile: str
+    visit_in_at: datetime
+    visit_out_at: datetime | None
+    history_created_at: datetime
+    history_updated_at: datetime
+    condominio_id: str
+
+
+class ExecuteDueRead(BaseModel):
+    checked: int
+    triggered: int
+    sms_sent: int

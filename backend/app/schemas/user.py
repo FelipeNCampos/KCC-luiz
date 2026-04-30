@@ -23,6 +23,8 @@ class UserRead(BaseModel):
     role: str
     job_title: str | None = None
     profile_photo_name: str | None = None
+    condominio_id: str | None = None
+    cargo: int | None = None
     created_at: datetime
     updated_at: datetime
 

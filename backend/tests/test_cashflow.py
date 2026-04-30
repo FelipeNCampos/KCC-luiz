@@ -3,11 +3,22 @@ from io import BytesIO
 
 import pytest
 from fastapi.testclient import TestClient
-from openpyxl import load_workbook
+from pypdf import PdfReader
+from reportlab.lib.pagesizes import A5
+from reportlab.pdfgen import canvas
 
-from app.models.user import User
 from app.core.config import settings
+from app.models.user import User
 from conftest import TestingSessionLocal
+
+
+def make_invoice_pdf(text: str = "Invoice") -> bytes:
+    output = BytesIO()
+    pdf = canvas.Canvas(output, pagesize=A5)
+    pdf.drawString(40, 200, text)
+    pdf.showPage()
+    pdf.save()
+    return output.getvalue()
 
 
 def register_user(client: TestClient, email: str, password: str = "strong-password-123") -> dict:
@@ -52,26 +63,24 @@ def test_create_record_increment_and_sign_rules(client: TestClient) -> None:
         "/api/v1/cashflow",
         headers=headers,
         data={
-            "type": "income",
             "invoice": "No",
             "date": "2026-04-10",
             "value": "150.00",
-            "description": "Monthly rent",
-            "flat": "A101",
         },
     )
     assert income_response.status_code == 201
     assert income_response.json()["payment_number"] == 1
     assert income_response.json()["amount"] == "150.00"
+    assert income_response.json()["description"] is None
+    assert income_response.json()["flat"] is None
 
     outcome_response = client.post(
         "/api/v1/cashflow",
         headers=headers,
         data={
-            "type": "outcome",
             "invoice": "No",
             "date": "2026-04-15",
-            "value": "40.00",
+            "value": "-40.00",
             "description": "Maintenance",
             "flat": "A101",
         },
@@ -94,7 +103,6 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
 
     records = [
         {
-            "type": "income",
             "invoice": "No",
             "date": "2026-04-01",
             "value": "200.00",
@@ -102,15 +110,13 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
             "flat": "A101",
         },
         {
-            "type": "outcome",
             "invoice": "No",
             "date": "2026-04-20",
-            "value": "50.00",
+            "value": "-50.00",
             "description": "Repair A101",
             "flat": "A101",
         },
         {
-            "type": "income",
             "invoice": "No",
             "date": "2026-05-02",
             "value": "300.00",
@@ -149,7 +155,6 @@ def test_permission_for_non_admin_or_manager(client: TestClient) -> None:
         "/api/v1/cashflow",
         headers=headers,
         data={
-            "type": "income",
             "invoice": "No",
             "date": "2026-04-10",
             "value": "10.00",
@@ -161,6 +166,23 @@ def test_permission_for_non_admin_or_manager(client: TestClient) -> None:
     assert user_auth["user"]["role"] == "user"
 
 
+def test_create_record_rejects_zero_value(client: TestClient) -> None:
+    admin_token = get_admin_token(client, email="zero-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "No",
+            "date": "2026-04-12",
+            "value": "0",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
     admin_token = get_admin_token(client)
     headers = {"Authorization": f"Bearer {admin_token}"}
@@ -169,14 +191,13 @@ def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
         "/api/v1/cashflow",
         headers=headers,
         data={
-            "type": "income",
             "invoice": "Yes",
             "date": "2026-04-12",
             "value": "90.00",
             "description": "Invoice record",
             "flat": "C303",
         },
-        files={"invoice_media": ("invoice.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        files={"invoice_media": ("invoice.pdf", make_invoice_pdf(), "application/pdf")},
     )
     assert create_response.status_code == 201
 
@@ -187,7 +208,51 @@ def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
     invoice_response = client.get(f"/api/v1/cashflow/{record['id']}/invoice", headers=headers)
     assert invoice_response.status_code == 200
     assert invoice_response.headers["content-type"] == "application/pdf"
-    assert invoice_response.content == b"%PDF-1.4 fake"
+    assert len(PdfReader(BytesIO(invoice_response.content)).pages) == 1
+
+
+def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> None:
+    admin_token = get_admin_token(client, email="update-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    create_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "No",
+            "date": "2026-04-12",
+            "value": "75.00",
+        },
+    )
+    assert create_response.status_code == 201
+    record = create_response.json()
+    assert record["has_invoice"] is False
+    assert record["description"] is None
+    assert record["flat"] is None
+
+    update_response = client.patch(
+        f"/api/v1/cashflow/{record['id']}",
+        headers=headers,
+        json={"description": "Updated comment", "flat": "F505"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["description"] == "Updated comment"
+    assert update_response.json()["flat"] == "F505"
+    assert update_response.json()["balance"] == "75.00"
+
+    invoice_response = client.patch(
+        f"/api/v1/cashflow/{record['id']}/invoice",
+        headers=headers,
+        files={"invoice_media": ("receipt.png", b"fake-image", "image/png")},
+    )
+    assert invoice_response.status_code == 200
+    assert invoice_response.json()["has_invoice"] is True
+    assert invoice_response.json()["invoice_media_name"] == "receipt.png"
+
+    media_response = client.get(f"/api/v1/cashflow/{record['id']}/invoice", headers=headers)
+    assert media_response.status_code == 200
+    assert media_response.headers["content-type"] == "image/png"
+    assert media_response.content == b"fake-image"
 
 
 def test_delete_record(client: TestClient) -> None:
@@ -198,7 +263,6 @@ def test_delete_record(client: TestClient) -> None:
         "/api/v1/cashflow",
         headers=headers,
         data={
-            "type": "income",
             "invoice": "No",
             "date": "2026-04-12",
             "value": "25.00",
@@ -225,7 +289,6 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
         "/api/v1/cashflow",
         headers=headers,
         data={
-            "type": "income",
             "invoice": "No",
             "date": "2026-03-20",
             "value": "300.00",
@@ -239,16 +302,34 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
         "/api/v1/cashflow",
         headers=headers,
         data={
-            "type": "income",
             "invoice": "Yes",
             "date": "2026-04-12",
             "value": "120.00",
             "description": "Monthly fee",
             "flat": "A101",
         },
-        files={"invoice_media": ("invoice.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        files={
+            "invoice_media": (
+                "invoice.pdf",
+                make_invoice_pdf("Monthly fee invoice"),
+                "application/pdf",
+            )
+        },
     )
     assert create_response.status_code == 201
+
+    next_month_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "No",
+            "date": "2026-05-02",
+            "value": "80.00",
+            "description": "May fee",
+            "flat": "B202",
+        },
+    )
+    assert next_month_response.status_code == 201
 
     sent_messages: list[EmailMessage] = []
 
@@ -286,7 +367,12 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
     response = client.post(
         "/api/v1/cashflow/report",
         headers=headers,
-        json={"email": "destino@example.com", "month": "2026-04", "search": "monthly"},
+        json={
+            "email": "destino@example.com",
+            "start_month": "2026-04",
+            "end_month": "2026-05",
+            "include_invoice_table": True,
+        },
     )
 
     assert response.status_code == 200
@@ -295,19 +381,23 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
 
     message = sent_messages[0]
     assert message["To"] == "destino@example.com"
-    assert message["Subject"] == "Cashflow report 2026-04"
+    assert message["Subject"] == "Cashflow report 2026-04_to_2026-05"
 
     attachment = next(message.iter_attachments())
-    assert attachment.get_filename() == "cashflow-report-2026-04.xlsx"
-    workbook = load_workbook(filename=BytesIO(attachment.get_content()))
-    sheet = workbook["Cashflow Report"]
+    assert attachment.get_filename() == "cashflow-report-2026-04_to_2026-05.pdf"
+    assert attachment.get_content_type() == "application/pdf"
 
-    assert sheet["A5"].value == "Opening Balance"
-    assert sheet["B5"].value == 300
-    assert sheet["A6"].value == "Monthly Balance"
-    assert sheet["B6"].value == 120
-    assert sheet["A7"].value == "Closing Balance"
-    assert sheet["B7"].value == 420
-    assert sheet["A11"].value == 2
-    assert sheet["E11"].value == "Monthly fee"
-    assert sheet["D11"].number_format == '$#,##0.00;[Red]-$#,##0.00'
+    reader = PdfReader(BytesIO(attachment.get_content()))
+    assert len(reader.pages) >= 2
+    first_page_text = reader.pages[0].extract_text()
+    assert "Period: 2026-04_to_2026-05" in first_page_text
+    assert "Opening Balance" in first_page_text
+    assert "EUR 300.00" in first_page_text
+    assert "Period Balance" in first_page_text
+    assert "EUR 200.00" in first_page_text
+    assert "Closing Balance" in first_page_text
+    assert "EUR 500.00" in first_page_text
+    assert "Monthly fee" in first_page_text
+    assert "May fee" in first_page_text
+    assert "Invoices" in first_page_text
+    assert "invoice.pdf" in first_page_text

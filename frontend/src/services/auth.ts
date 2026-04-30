@@ -8,6 +8,8 @@ export type User = {
   role: "admin" | "employee" | "user" | string;
   job_title?: string | null;
   profile_photo_name?: string | null;
+  condominio_id?: string | null;
+  cargo?: number | null;
   created_at: string;
   updated_at: string;
 };

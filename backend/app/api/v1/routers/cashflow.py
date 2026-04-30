@@ -1,7 +1,17 @@
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
@@ -9,7 +19,15 @@ from app.db.session import get_db
 from app.models.user import User
 from app.repositories.cashflow_repository import CashFlowRepository
 from app.schemas.auth import MessageResponse
-from app.schemas.cashflow import CashFlowCreate, CashFlowListResponse, CashFlowReportRequest, CashFlowRow
+from app.schemas.cashflow import (
+    CashFlowCreate,
+    CashFlowListResponse,
+    CashFlowNextPaymentNumberResponse,
+    CashFlowReportPreviewRequest,
+    CashFlowReportRequest,
+    CashFlowRow,
+    CashFlowUpdate,
+)
 from app.services.cashflow_service import CashFlowService
 
 router = APIRouter()
@@ -22,7 +40,23 @@ def _parse_invoice_flag(value: str) -> bool:
         return True
     if normalized in {"no", "false", "0"}:
         return False
-    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invoice must be Yes or No")
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Invoice must be Yes or No",
+    )
+
+
+def _validate_invoice_media(invoice_media: UploadFile | None) -> None:
+    if invoice_media and invoice_media.content_type:
+        allowed = (
+            invoice_media.content_type.startswith("image/")
+            or invoice_media.content_type == "application/pdf"
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invoice media must be an image or PDF",
+            )
 
 
 @router.get("", response_model=CashFlowListResponse)
@@ -36,27 +70,34 @@ def list_cashflow_records(
     return service.list_month(month=month, search=search)
 
 
+@router.get("/next-payment-number", response_model=CashFlowNextPaymentNumberResponse)
+def get_next_cashflow_payment_number(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles("admin", "manager"))],
+) -> CashFlowNextPaymentNumberResponse:
+    service = CashFlowService(CashFlowRepository(db))
+    return CashFlowNextPaymentNumberResponse(next_payment_number=service.get_next_payment_number())
+
+
 @router.post("", response_model=CashFlowRow, status_code=status.HTTP_201_CREATED)
 async def create_cashflow_record(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(require_roles("admin", "manager"))],
-    entry_type: Annotated[str, Form(alias="type")],
     invoice: Annotated[str, Form(alias="invoice")],
     record_date: Annotated[str, Form(alias="date")],
     value: Annotated[Decimal, Form(alias="value")],
-    description: Annotated[str, Form(alias="description")],
-    flat: Annotated[str, Form(alias="flat")],
+    description: Annotated[str | None, Form(alias="description")] = None,
+    flat: Annotated[str | None, Form(alias="flat")] = None,
     invoice_media: Annotated[UploadFile | None, File(alias="invoice_media")] = None,
 ) -> CashFlowRow:
     has_invoice = _parse_invoice_flag(invoice)
+    if value == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Value must be different from zero",
+        )
 
-    if invoice_media and invoice_media.content_type:
-        allowed = invoice_media.content_type.startswith("image/") or invoice_media.content_type == "application/pdf"
-        if not allowed:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Invoice media must be an image or PDF",
-            )
+    _validate_invoice_media(invoice_media)
 
     invoice_bytes: bytes | None = None
     invoice_name: str | None = None
@@ -72,7 +113,6 @@ async def create_cashflow_record(
         invoice_mime = invoice_media.content_type
 
     payload = CashFlowCreate(
-        entry_type=entry_type.strip().lower(),
         has_invoice=has_invoice,
         record_date=record_date,
         value=value,
@@ -89,12 +129,49 @@ async def create_cashflow_record(
         invoice_media_data=invoice_bytes,
     )
 
-    listing = service.list_month(month=created.record_date.strftime("%Y-%m"), search=None)
-    for row in listing.items:
-        if row.id == created.id:
-            return row
+    return service.row_for_record(created)
 
-    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to build response")
+
+@router.patch("/{record_id}", response_model=CashFlowRow)
+def update_cashflow_record(
+    record_id: int,
+    payload: CashFlowUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles("admin", "manager"))],
+) -> CashFlowRow:
+    service = CashFlowService(CashFlowRepository(db))
+    updated = service.update_record(record_id, payload)
+    return service.row_for_record(updated)
+
+
+@router.patch("/{record_id}/invoice", response_model=CashFlowRow)
+async def update_cashflow_invoice(
+    record_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles("admin", "manager"))],
+    invoice_media: Annotated[UploadFile, File(alias="invoice_media")],
+) -> CashFlowRow:
+    _validate_invoice_media(invoice_media)
+    invoice_bytes = await invoice_media.read()
+    if not invoice_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invoice media is required",
+        )
+    if len(invoice_bytes) > MAX_INVOICE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Invoice media is too large",
+        )
+
+    service = CashFlowService(CashFlowRepository(db))
+    updated = service.update_invoice_media(
+        record_id=record_id,
+        invoice_media_name=invoice_media.filename,
+        invoice_media_mime=invoice_media.content_type,
+        invoice_media_data=invoice_bytes,
+    )
+    return service.row_for_record(updated)
 
 
 @router.get("/{record_id}/invoice")
@@ -116,12 +193,33 @@ def send_cashflow_report(
     _: Annotated[User, Depends(require_roles("admin", "manager"))],
 ) -> MessageResponse:
     service = CashFlowService(CashFlowRepository(db))
-    service.send_month_report(
+    service.send_range_report(
         recipient=payload.email,
-        month=payload.month,
+        start_month=payload.start_month,
+        end_month=payload.end_month,
         search=payload.search,
+        include_invoice_table=payload.include_invoice_table,
+        fallback_month=payload.month,
     )
     return MessageResponse(message="Cash flow report sent")
+
+
+@router.post("/report/preview")
+def preview_cashflow_report(
+    payload: CashFlowReportPreviewRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles("admin", "manager"))],
+) -> Response:
+    service = CashFlowService(CashFlowRepository(db))
+    period_label, report_data = service.build_range_report_pdf(
+        start_month=payload.start_month,
+        end_month=payload.end_month,
+        search=payload.search,
+        include_invoice_table=payload.include_invoice_table,
+        fallback_month=payload.month,
+    )
+    headers = {"Content-Disposition": f'inline; filename="cashflow-report-{period_label}.pdf"'}
+    return Response(content=report_data, media_type="application/pdf", headers=headers)
 
 
 @router.delete("/{record_id}", response_model=MessageResponse)

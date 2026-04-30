@@ -1,12 +1,11 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AxiosError } from "axios";
-import { CircleDollarSign, FileSpreadsheet, Search, Upload, X } from "lucide-react";
+import { CircleDollarSign, FileSpreadsheet, Pencil, Plus, Search, Upload, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
-import { cashFlowService, CashFlowListResponse, CashFlowType } from "../services/cashflow";
+import { cashFlowService, CashFlowListResponse, CashFlowRow } from "../services/cashflow";
 
 type FormState = {
-  type: CashFlowType;
   invoice: "Yes" | "No";
   date: string;
   value: string;
@@ -21,9 +20,28 @@ type PreviewState = {
   fileName: string;
 };
 
+type InvoiceEditorState = {
+  record: CashFlowRow;
+  preview: PreviewState | null;
+  selectedFile: File | null;
+  error: string | null;
+};
+
+type TextEditorState = {
+  record: CashFlowRow;
+  description: string;
+  flat: string;
+  error: string | null;
+};
+
 type ReportFormState = {
   email: string;
+  startMonth: string;
+  endMonth: string;
+  includeInvoiceTable: boolean;
 };
+
+const FLAT_OPTIONS = ["Flat 50", "Flat 51", "Flat 52"] as const;
 
 function toMonthInputValue(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -35,11 +53,20 @@ function toDateInputValue(date: Date) {
 
 function formatCurrency(value: string | number) {
   const parsed = typeof value === "number" ? value : Number(value);
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(parsed);
+  return new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(parsed);
+}
+
+function normalizeFlatValue(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+
+  const match = trimmed.match(/^flat\s*(\d+)$/i) || trimmed.match(/^(\d+)$/);
+  if (!match) return trimmed;
+
+  return `Flat ${match[1]}`;
 }
 
 const initialForm: FormState = {
-  type: "income",
   invoice: "No",
   date: toDateInputValue(new Date()),
   value: "",
@@ -50,6 +77,7 @@ const initialForm: FormState = {
 
 export function CashFlowPage() {
   const monthInputRef = useRef<HTMLInputElement | null>(null);
+  const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
   const [search, setSearch] = useState("");
   const [data, setData] = useState<CashFlowListResponse | null>(null);
@@ -60,11 +88,23 @@ export function CashFlowPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
-  const [reportForm, setReportForm] = useState<ReportFormState>({ email: "" });
+  const [reportForm, setReportForm] = useState<ReportFormState>({
+    email: "",
+    startMonth: month,
+    endMonth: month,
+    includeInvoiceTable: false
+  });
   const [reportError, setReportError] = useState<string | null>(null);
+  const [reportPreviewUrl, setReportPreviewUrl] = useState<string | null>(null);
+  const [reportPreviewLoading, setReportPreviewLoading] = useState(false);
+  const [reportPreviewError, setReportPreviewError] = useState<string | null>(null);
   const [sendingReport, setSendingReport] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [invoiceEditor, setInvoiceEditor] = useState<InvoiceEditorState | null>(null);
+  const [savingInvoice, setSavingInvoice] = useState(false);
+  const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
+  const [savingText, setSavingText] = useState(false);
+  const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -92,12 +132,83 @@ export function CashFlowPage() {
   }, [month, search]);
 
   useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setIsCreateOpen(false);
+      setIsReportOpen(false);
+      setTextEditor(null);
+      closeInvoiceEditor();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     return () => {
-      if (preview) {
-        URL.revokeObjectURL(preview.url);
+      if (invoiceEditor?.preview) {
+        URL.revokeObjectURL(invoiceEditor.preview.url);
       }
     };
-  }, [preview]);
+  }, [invoiceEditor?.preview]);
+
+  useEffect(() => {
+    return () => {
+      if (createInvoicePreview) {
+        URL.revokeObjectURL(createInvoicePreview.url);
+      }
+    };
+  }, [createInvoicePreview]);
+
+  useEffect(() => {
+    if (!isReportOpen || !reportForm.startMonth || !reportForm.endMonth || reportForm.startMonth > reportForm.endMonth) {
+      setReportPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+      return;
+    }
+
+    let active = true;
+    setReportPreviewLoading(true);
+    setReportPreviewError(null);
+
+    cashFlowService
+      .previewReport({
+        start_month: reportForm.startMonth,
+        end_month: reportForm.endMonth,
+        search: search.trim() || undefined,
+        include_invoice_table: reportForm.includeInvoiceTable
+      })
+      .then((blob) => {
+        if (!active) return;
+        const url = URL.createObjectURL(blob);
+        setReportPreviewUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return url;
+        });
+      })
+      .catch((requestError: AxiosError<{ detail?: string }>) => {
+        if (!active) return;
+        setReportPreviewError(requestError.response?.data?.detail ?? "Unable to load report preview.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setReportPreviewLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isReportOpen, reportForm.startMonth, reportForm.endMonth, reportForm.includeInvoiceTable, search]);
+
+  useEffect(() => {
+    return () => {
+      if (reportPreviewUrl) {
+        URL.revokeObjectURL(reportPreviewUrl);
+      }
+    };
+  }, [reportPreviewUrl]);
 
   const monthlyTotal = useMemo(() => formatCurrency(data?.monthly_total ?? 0), [data?.monthly_total]);
 
@@ -111,26 +222,21 @@ export function CashFlowPage() {
     setFormError(null);
     setFeedback(null);
 
-    if (!form.date || !form.value || !form.description.trim() || !form.flat.trim()) {
+    if (!form.date || !form.value) {
       setFormError("Please fill all required fields.");
       return;
     }
 
-    if (Number(form.value) <= 0) {
-      setFormError("Value must be a positive number.");
-      return;
-    }
-
-    if (form.invoice === "Yes" && !form.invoiceMedia) {
-      setFormError("Invoice media is required when Invoice is Yes.");
+    if (Number(form.value) === 0) {
+      setFormError("Value must be different from zero.");
       return;
     }
 
     setSaving(true);
     try {
+      const invoice = form.invoiceMedia ? "Yes" : "No";
       await cashFlowService.create({
-        type: form.type,
-        invoice: form.invoice,
+        invoice,
         date: form.date,
         value: form.value,
         description: form.description,
@@ -139,6 +245,7 @@ export function CashFlowPage() {
       });
 
       setForm(initialForm);
+      clearCreateInvoicePreview();
       setIsCreateOpen(false);
       setFeedback({ type: "success", message: "Cash flow record created successfully." });
       await reload();
@@ -165,19 +272,29 @@ export function CashFlowPage() {
     }
   }
 
-  async function handleOpenInvoice(recordId: number, fileName: string | null) {
+  async function handleOpenInvoiceEditor(row: CashFlowRow) {
     setFeedback(null);
 
+    if (!row.has_invoice) {
+      setInvoiceEditor({ record: row, preview: null, selectedFile: null, error: null });
+      return;
+    }
+
     try {
-      const media = await cashFlowService.getInvoiceMedia(recordId);
+      const media = await cashFlowService.getInvoiceMedia(row.id);
       const objectUrl = URL.createObjectURL(media.blob);
-      if (preview) {
-        URL.revokeObjectURL(preview.url);
+      if (invoiceEditor?.preview) {
+        URL.revokeObjectURL(invoiceEditor.preview.url);
       }
-      setPreview({
-        url: objectUrl,
-        contentType: media.contentType ?? "application/octet-stream",
-        fileName: fileName ?? "invoice"
+      setInvoiceEditor({
+        record: row,
+        preview: {
+          url: objectUrl,
+          contentType: media.contentType ?? "application/octet-stream",
+          fileName: row.invoice_media_name ?? "invoice"
+        },
+        selectedFile: null,
+        error: null
       });
     } catch (requestError) {
       const axiosError = requestError as AxiosError<{ detail?: string }>;
@@ -195,15 +312,32 @@ export function CashFlowPage() {
       return;
     }
 
+    if (!reportForm.startMonth || !reportForm.endMonth) {
+      setReportError("Please select a report period.");
+      return;
+    }
+
+    if (reportForm.startMonth > reportForm.endMonth) {
+      setReportError("Start month must be before or equal to end month.");
+      return;
+    }
+
     setSendingReport(true);
     try {
       const response = await cashFlowService.sendReport({
         email: reportForm.email.trim(),
-        month,
-        search: search.trim() || undefined
+        start_month: reportForm.startMonth,
+        end_month: reportForm.endMonth,
+        search: search.trim() || undefined,
+        include_invoice_table: reportForm.includeInvoiceTable
       });
-      setIsReportOpen(false);
-      setReportForm({ email: "" });
+      closeReportModal();
+      setReportForm({
+        email: "",
+        startMonth: month,
+        endMonth: month,
+        includeInvoiceTable: false
+      });
       setFeedback({ type: "success", message: response.message });
     } catch (requestError) {
       const axiosError = requestError as AxiosError<{ detail?: string }>;
@@ -215,11 +349,119 @@ export function CashFlowPage() {
     }
   }
 
-  function closePreview() {
-    if (preview) {
-      URL.revokeObjectURL(preview.url);
+  function closeInvoiceEditor() {
+    if (invoiceEditor?.preview) {
+      URL.revokeObjectURL(invoiceEditor.preview.url);
     }
-    setPreview(null);
+    setInvoiceEditor(null);
+  }
+
+  function clearCreateInvoicePreview() {
+    setCreateInvoicePreview((current) => {
+      if (current) {
+        URL.revokeObjectURL(current.url);
+      }
+      return null;
+    });
+  }
+
+  function clearCreateInvoiceMedia() {
+    clearCreateInvoicePreview();
+    setForm((prev) => ({ ...prev, invoice: "No", invoiceMedia: null }));
+    if (createInvoiceFileInputRef.current) {
+      createInvoiceFileInputRef.current.value = "";
+    }
+  }
+
+  function closeCreateRecord() {
+    clearCreateInvoiceMedia();
+    setForm(initialForm);
+    setFormError(null);
+    setIsCreateOpen(false);
+  }
+
+  function handleCreateInvoiceFileSelect(file: File | null) {
+    clearCreateInvoiceMedia();
+    setForm((prev) => ({ ...prev, invoice: file ? "Yes" : "No", invoiceMedia: file }));
+    setFormError(null);
+
+    if (!file) return;
+
+    setCreateInvoicePreview({
+      url: URL.createObjectURL(file),
+      contentType: file.type || "application/octet-stream",
+      fileName: file.name
+    });
+  }
+
+  function handleInvoiceFileSelect(file: File | null) {
+    if (!invoiceEditor || !file) return;
+    if (invoiceEditor.preview) {
+      URL.revokeObjectURL(invoiceEditor.preview.url);
+    }
+    setInvoiceEditor({
+      ...invoiceEditor,
+      selectedFile: file,
+      preview: {
+        url: URL.createObjectURL(file),
+        contentType: file.type || "application/octet-stream",
+        fileName: file.name
+      },
+      error: null
+    });
+  }
+
+  async function handleSaveInvoice() {
+    if (!invoiceEditor?.selectedFile) {
+      setInvoiceEditor((current) => (current ? { ...current, error: "Select an image or PDF first." } : current));
+      return;
+    }
+
+    setSavingInvoice(true);
+    try {
+      await cashFlowService.updateInvoiceMedia(invoiceEditor.record.id, invoiceEditor.selectedFile);
+      closeInvoiceEditor();
+      setFeedback({ type: "success", message: "Invoice media updated successfully." });
+      await reload();
+    } catch (requestError) {
+      const axiosError = requestError as AxiosError<{ detail?: string }>;
+      setInvoiceEditor((current) =>
+        current ? { ...current, error: axiosError.response?.data?.detail ?? "Unable to update invoice media." } : current
+      );
+    } finally {
+      setSavingInvoice(false);
+    }
+  }
+
+  function openTextEditor(row: CashFlowRow) {
+    setFeedback(null);
+    setTextEditor({
+      record: row,
+      description: row.description ?? "",
+      flat: normalizeFlatValue(row.flat),
+      error: null
+    });
+  }
+
+  async function handleSaveText(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!textEditor) return;
+
+    setSavingText(true);
+    try {
+      await cashFlowService.update(textEditor.record.id, {
+        description: textEditor.description.trim() || null,
+        flat: textEditor.flat.trim() || null
+      });
+      setTextEditor(null);
+      setFeedback({ type: "success", message: "Record updated successfully." });
+      await reload();
+    } catch (requestError) {
+      const axiosError = requestError as AxiosError<{ detail?: string }>;
+      setTextEditor((current) => (current ? { ...current, error: axiosError.response?.data?.detail ?? "Unable to update record." } : current));
+    } finally {
+      setSavingText(false);
+    }
   }
 
   function openMonthPicker() {
@@ -229,6 +471,25 @@ export function CashFlowPage() {
     if (typeof input.showPicker === "function") {
       input.showPicker();
     }
+  }
+
+  function openReportModal() {
+    setReportError(null);
+    setReportForm((current) => ({
+      ...current,
+      startMonth: current.startMonth || month,
+      endMonth: current.endMonth || month
+    }));
+    setIsReportOpen(true);
+  }
+
+  function closeReportModal() {
+    setIsReportOpen(false);
+    setReportPreviewError(null);
+    setReportPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
   }
 
   return (
@@ -278,7 +539,7 @@ export function CashFlowPage() {
             <CircleDollarSign size={18} />
             New record
           </button>
-          <button className="oak-button-secondary min-h-12 w-full md:flex-1" type="button" onClick={() => setIsReportOpen(true)}>
+          <button className="oak-button-secondary min-h-12 w-full md:flex-1" type="button" onClick={openReportModal}>
             <FileSpreadsheet size={18} />
             Report
           </button>
@@ -304,7 +565,7 @@ export function CashFlowPage() {
                 <th className="px-4 py-3 font-extrabold">Invoice</th>
                 <th className="px-4 py-3 font-extrabold">Date</th>
                 <th className="px-4 py-3 font-extrabold text-right">Amount</th>
-                <th className="px-4 py-3 font-extrabold">Description</th>
+                <th className="px-4 py-3 font-extrabold">Comments</th>
                 <th className="px-4 py-3 font-extrabold">Flat</th>
                 <th className="px-4 py-3 font-extrabold text-right">Balance</th>
                 <th className="px-4 py-3 font-extrabold">Action</th>
@@ -326,19 +587,37 @@ export function CashFlowPage() {
                 </tr>
               ) : data && data.items.length > 0 ? (
                 data.items.map((row) => (
-                  <tr key={row.id} className="bg-white transition-colors hover:bg-oak-surface">
+                  <tr
+                    key={row.id}
+                    className="cursor-pointer bg-white transition-colors hover:bg-oak-surface"
+                    onClick={() => openTextEditor(row)}
+                  >
                     <td className="px-4 py-3 text-sm font-bold text-oak-coffee">#{row.payment_number}</td>
                     <td className="px-4 py-3 text-sm font-semibold text-oak-coffee">
                       {row.has_invoice ? (
                         <button
-                          className="underline decoration-oak-taupe underline-offset-2"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-oak-border px-2.5 py-1.5 text-xs font-extrabold text-oak-coffee transition-colors hover:bg-oak-panel"
                           type="button"
-                          onClick={() => handleOpenInvoice(row.id, row.invoice_media_name)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleOpenInvoiceEditor(row);
+                          }}
                         >
-                          Yes
+                          <Pencil size={14} />
+                          View / update
                         </button>
                       ) : (
-                        "-"
+                        <button
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-oak-borderStrong px-2.5 py-1.5 text-xs font-extrabold text-oak-coffee transition-colors hover:bg-oak-panel"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleOpenInvoiceEditor(row);
+                          }}
+                        >
+                          <Plus size={14} />
+                          Add
+                        </button>
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm font-semibold text-black/65">{row.record_date}</td>
@@ -347,15 +626,46 @@ export function CashFlowPage() {
                     >
                       {formatCurrency(row.amount)}
                     </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-black/70">{row.description}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-black/70">{row.flat}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-black/70">
+                      <button
+                        className="inline-flex max-w-72 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openTextEditor(row);
+                        }}
+                      >
+                        {row.description ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
+                        <span className="truncate">{row.description ?? "Add"}</span>
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-semibold text-black/70">
+                      <button
+                        className="inline-flex max-w-40 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openTextEditor(row);
+                        }}
+                      >
+                        {row.flat ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
+                        <span className="truncate">{row.flat ?? "Add"}</span>
+                      </button>
+                    </td>
                     <td
                       className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.balance) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
                     >
                       {formatCurrency(row.balance)}
                     </td>
                     <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                      <button className="oak-button-secondary !min-h-9 !px-3 !py-1.5" type="button" onClick={() => handleDeleteRecord(row.id)}>
+                      <button
+                        className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleDeleteRecord(row.id);
+                        }}
+                      >
                         Delete
                       </button>
                     </td>
@@ -381,7 +691,7 @@ export function CashFlowPage() {
                 <p className="oak-label">Cashflow</p>
                 <h2 className="text-xl font-extrabold text-oak-coffee">Add record</h2>
               </div>
-              <button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={() => setIsCreateOpen(false)}>
+              <button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={closeCreateRecord}>
                 <X size={17} />
               </button>
             </header>
@@ -398,39 +708,14 @@ export function CashFlowPage() {
                     required
                   />
                 </label>
-
-                <label className="grid gap-2">
-                  <span className="oak-label">Invoice</span>
-                  <select
-                    className="oak-input"
-                    value={form.invoice}
-                    onChange={(event) => setForm((prev) => ({ ...prev, invoice: event.target.value as "Yes" | "No" }))}
-                  >
-                    <option value="No">No</option>
-                    <option value="Yes">Yes</option>
-                  </select>
-                </label>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2">
-                  <span className="oak-label">Type</span>
-                  <select
-                    className="oak-input"
-                    value={form.type}
-                    onChange={(event) => setForm((prev) => ({ ...prev, type: event.target.value as CashFlowType }))}
-                  >
-                    <option value="income">Income</option>
-                    <option value="outcome">Outcome</option>
-                  </select>
-                </label>
-
+              <div className="grid gap-4">
                 <label className="grid gap-2">
                   <span className="oak-label">Value</span>
                   <input
                     className="oak-input"
                     type="number"
-                    min="0.01"
                     step="0.01"
                     value={form.value}
                     onChange={(event) => setForm((prev) => ({ ...prev, value: event.target.value }))}
@@ -446,7 +731,6 @@ export function CashFlowPage() {
                     className="oak-input"
                     value={form.description}
                     onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
-                    required
                   />
                 </label>
 
@@ -456,28 +740,38 @@ export function CashFlowPage() {
                     className="oak-input"
                     value={form.flat}
                     onChange={(event) => setForm((prev) => ({ ...prev, flat: event.target.value }))}
-                    required
                   />
                 </label>
               </div>
 
-              {form.invoice === "Yes" ? (
-                <label className="grid gap-2">
-                  <span className="oak-label">Invoice media</span>
-                  <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-oak-borderStrong bg-oak-surface px-3.5 py-2.5 text-sm font-semibold text-oak-coffee">
-                    <Upload size={16} />
-                    <span>{form.invoiceMedia?.name ?? "Upload image or PDF"}</span>
-                    <input
-                      className="hidden"
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={(event) =>
-                        setForm((prev) => ({ ...prev, invoiceMedia: event.target.files?.[0] ?? null }))
-                      }
-                    />
-                  </label>
+              <label className="grid gap-2">
+                <span className="oak-label">Invoice media</span>
+                <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-oak-borderStrong bg-oak-surface px-3.5 py-2.5 text-sm font-semibold text-oak-coffee">
+                  <Upload size={16} />
+                  <span>{form.invoiceMedia?.name ?? "Upload image or PDF"}</span>
+                  <input
+                    ref={createInvoiceFileInputRef}
+                    className="hidden"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(event) => handleCreateInvoiceFileSelect(event.target.files?.[0] ?? null)}
+                  />
                 </label>
-              ) : null}
+
+                {createInvoicePreview ? (
+                  <div className="max-h-72 overflow-auto rounded-lg border border-oak-border bg-white p-3">
+                    {createInvoicePreview.contentType.startsWith("image/") ? (
+                      <img
+                        alt="Invoice preview"
+                        className="mx-auto max-h-64 rounded-md border border-oak-border"
+                        src={createInvoicePreview.url}
+                      />
+                    ) : (
+                      <iframe className="h-64 w-full rounded-md border border-oak-border" src={createInvoicePreview.url} title="Invoice preview" />
+                    )}
+                  </div>
+                ) : null}
+              </label>
 
               {formError ? <p className="text-sm font-bold text-oak-danger">{formError}</p> : null}
 
@@ -485,7 +779,7 @@ export function CashFlowPage() {
                 <button
                   className="oak-button-secondary"
                   type="button"
-                  onClick={() => setIsCreateOpen(false)}
+                  onClick={closeCreateRecord}
                   disabled={saving}
                 >
                   Cancel
@@ -501,7 +795,7 @@ export function CashFlowPage() {
 
       {isReportOpen ? (
         <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 p-4">
-          <article className="w-full max-w-md rounded-2xl border border-oak-border bg-white shadow-oakLg">
+          <article className="flex max-h-[92dvh] w-full max-w-5xl flex-col rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
                 <p className="oak-label">Cashflow</p>
@@ -510,44 +804,147 @@ export function CashFlowPage() {
               <button
                 className="grid size-9 place-items-center rounded-lg border border-oak-border"
                 type="button"
-                onClick={() => setIsReportOpen(false)}
+                onClick={closeReportModal}
                 disabled={sendingReport}
               >
                 <X size={17} />
               </button>
             </header>
 
-            <form className="grid gap-4 p-6" onSubmit={handleSendReport}>
+            <form className="grid min-h-0 flex-1 gap-4 overflow-hidden p-6 lg:grid-cols-[320px_minmax(0,1fr)]" onSubmit={handleSendReport}>
+              <div className="grid content-start gap-4 overflow-y-auto pr-1">
+                <label className="grid gap-2">
+                  <span className="oak-label">Email</span>
+                  <input
+                    className="oak-input"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={reportForm.email}
+                    onChange={(event) => setReportForm((current) => ({ ...current, email: event.target.value }))}
+                    required
+                  />
+                </label>
+
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                  <label className="grid gap-2">
+                    <span className="oak-label">Start month</span>
+                    <input
+                      className="oak-input"
+                      type="month"
+                      value={reportForm.startMonth}
+                      onChange={(event) => setReportForm((current) => ({ ...current, startMonth: event.target.value }))}
+                      required
+                    />
+                  </label>
+
+                  <label className="grid gap-2">
+                    <span className="oak-label">End month</span>
+                    <input
+                      className="oak-input"
+                      type="month"
+                      value={reportForm.endMonth}
+                      onChange={(event) => setReportForm((current) => ({ ...current, endMonth: event.target.value }))}
+                      required
+                    />
+                  </label>
+                </div>
+
+                <label className="flex items-center gap-3 rounded-xl border border-oak-border bg-oak-surface p-3 text-sm font-bold text-oak-coffee">
+                  <input
+                    className="size-4 accent-oak-coffee"
+                    type="checkbox"
+                    checked={reportForm.includeInvoiceTable}
+                    onChange={(event) => setReportForm((current) => ({ ...current, includeInvoiceTable: event.target.checked }))}
+                  />
+                  Add invoice table before media pages
+                </label>
+
+                <div className="rounded-xl bg-oak-panel p-4 text-sm font-semibold text-black/60">
+                  Report period: {reportForm.startMonth} to {reportForm.endMonth}
+                  {search.trim() ? ` | Filter: ${search.trim()}` : ""}
+                </div>
+
+                {reportError ? <p className="text-sm font-bold text-oak-danger">{reportError}</p> : null}
+
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end lg:flex-col-reverse">
+                  <button className="oak-button-secondary" type="button" onClick={closeReportModal} disabled={sendingReport}>
+                    Cancel
+                  </button>
+                  <button className="oak-button-primary" type="submit" disabled={sendingReport}>
+                    {sendingReport ? "Sending..." : "Send report"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="min-h-[420px] overflow-hidden rounded-xl border border-oak-border bg-oak-panel">
+                {reportPreviewLoading ? (
+                  <div className="grid h-full min-h-[420px] place-items-center text-sm font-bold text-black/55">Loading preview...</div>
+                ) : reportPreviewError ? (
+                  <div className="grid h-full min-h-[420px] place-items-center p-6 text-center text-sm font-bold text-oak-danger">{reportPreviewError}</div>
+                ) : reportPreviewUrl ? (
+                  <iframe className="h-full min-h-[420px] w-full bg-white" src={reportPreviewUrl} title="Cashflow report preview" />
+                ) : (
+                  <div className="grid h-full min-h-[420px] place-items-center text-sm font-bold text-black/55">Select a period to preview.</div>
+                )}
+              </div>
+            </form>
+          </article>
+        </div>
+      ) : null}
+
+      {textEditor ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
+          <article className="w-full max-w-md rounded-2xl border border-oak-border bg-white shadow-oakLg">
+            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
+              <div>
+                <p className="oak-label">Cashflow</p>
+                <h2 className="text-lg font-extrabold text-oak-coffee">Edit record</h2>
+              </div>
+              <button
+                className="grid size-9 place-items-center rounded-lg border border-oak-border"
+                type="button"
+                onClick={() => setTextEditor(null)}
+                disabled={savingText}
+              >
+                <X size={17} />
+              </button>
+            </header>
+
+            <form className="grid gap-4 p-6" onSubmit={handleSaveText}>
               <label className="grid gap-2">
-                <span className="oak-label">Email</span>
-                <input
-                  className="oak-input"
-                  type="email"
-                  placeholder="name@example.com"
-                  value={reportForm.email}
-                  onChange={(event) => setReportForm({ email: event.target.value })}
-                  required
+                <span className="oak-label">Comments</span>
+                <textarea
+                  className="oak-input min-h-28 resize-y"
+                  maxLength={255}
+                  value={textEditor.description}
+                  onChange={(event) => setTextEditor((current) => (current ? { ...current, description: event.target.value, error: null } : current))}
                 />
               </label>
 
-              <div className="rounded-xl bg-oak-panel p-4 text-sm font-semibold text-black/60">
-                Report period: {month}
-                {search.trim() ? ` | Filter: ${search.trim()}` : ""}
-              </div>
+              <label className="grid gap-2">
+                <span className="oak-label">Flat</span>
+                <select
+                  className="oak-input"
+                  value={textEditor.flat || ""}
+                  onChange={(event) => setTextEditor((current) => (current ? { ...current, flat: event.target.value, error: null } : current))}
+                >
+                  <option value="">Select a flat</option>
+                  {FLAT_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-              {reportError ? <p className="text-sm font-bold text-oak-danger">{reportError}</p> : null}
+              {textEditor.error ? <p className="text-sm font-bold text-oak-danger">{textEditor.error}</p> : null}
 
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <button
-                  className="oak-button-secondary"
-                  type="button"
-                  onClick={() => setIsReportOpen(false)}
-                  disabled={sendingReport}
-                >
+                <button className="oak-button-secondary" type="button" onClick={() => setTextEditor(null)} disabled={savingText}>
                   Cancel
                 </button>
-                <button className="oak-button-primary" type="submit" disabled={sendingReport}>
-                  {sendingReport ? "Sending..." : "Send report"}
+                <button className="oak-button-primary" type="submit" disabled={savingText}>
+                  {savingText ? "Saving..." : "Save"}
                 </button>
               </div>
             </form>
@@ -555,33 +952,74 @@ export function CashFlowPage() {
         </div>
       ) : null}
 
-      {preview ? (
+      {invoiceEditor ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
           <article className="w-full max-w-4xl rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
                 <p className="oak-label">Invoice media</p>
-                <h2 className="text-lg font-extrabold text-oak-coffee">{preview.fileName}</h2>
+                <h2 className="text-lg font-extrabold text-oak-coffee">
+                  {invoiceEditor.preview?.fileName ?? `Payment #${invoiceEditor.record.payment_number}`}
+                </h2>
               </div>
-              <button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={closePreview}>
+              <button
+                className="grid size-9 place-items-center rounded-lg border border-oak-border"
+                type="button"
+                onClick={closeInvoiceEditor}
+                disabled={savingInvoice}
+              >
                 <X size={17} />
               </button>
             </header>
 
-            <div className="max-h-[70dvh] overflow-auto p-4">
-              {preview.contentType.startsWith("image/") ? (
-                <img alt="Invoice preview" className="mx-auto max-h-[60dvh] rounded-lg border border-oak-border" src={preview.url} />
+            <div className="grid gap-4 p-4">
+              <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-oak-borderStrong bg-oak-surface px-3.5 py-2.5 text-sm font-semibold text-oak-coffee">
+                <Upload size={16} />
+                <span>{invoiceEditor.selectedFile?.name ?? (invoiceEditor.record.has_invoice ? "Replace image or PDF" : "Add image or PDF")}</span>
+                <input
+                  className="hidden"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(event) => handleInvoiceFileSelect(event.target.files?.[0] ?? null)}
+                />
+              </label>
+
+              {invoiceEditor.preview ? (
+                <div className="max-h-[62dvh] overflow-auto">
+                  {invoiceEditor.preview.contentType.startsWith("image/") ? (
+                    <img
+                      alt="Invoice preview"
+                      className="mx-auto max-h-[58dvh] rounded-lg border border-oak-border"
+                      src={invoiceEditor.preview.url}
+                    />
+                  ) : (
+                    <iframe className="h-[58dvh] w-full rounded-lg border border-oak-border" src={invoiceEditor.preview.url} title="Invoice preview" />
+                  )}
+                </div>
               ) : (
-                <iframe className="h-[60dvh] w-full rounded-lg border border-oak-border" src={preview.url} title="Invoice preview" />
+                <div className="grid min-h-44 place-items-center rounded-lg border border-dashed border-oak-border bg-oak-panel text-sm font-semibold text-black/55">
+                  No invoice media added yet.
+                </div>
               )}
+
+              {invoiceEditor.error ? <p className="text-sm font-bold text-oak-danger">{invoiceEditor.error}</p> : null}
             </div>
 
             <footer className="flex justify-end gap-3 border-t border-oak-border px-6 py-4">
-              <button className="oak-button-secondary" type="button" onClick={closePreview}>
+              <button className="oak-button-secondary" type="button" onClick={closeInvoiceEditor} disabled={savingInvoice}>
                 Close
               </button>
-              <button className="oak-button-primary" type="button" onClick={() => window.open(preview.url, "_blank", "noopener,noreferrer")}>
-                Open in new tab
+              {invoiceEditor.preview ? (
+                <button
+                  className="oak-button-secondary"
+                  type="button"
+                  onClick={() => invoiceEditor.preview && window.open(invoiceEditor.preview.url, "_blank", "noopener,noreferrer")}
+                >
+                  Open in new tab
+                </button>
+              ) : null}
+              <button className="oak-button-primary" type="button" onClick={() => void handleSaveInvoice()} disabled={savingInvoice}>
+                {savingInvoice ? "Saving..." : invoiceEditor.record.has_invoice ? "Update media" : "Add media"}
               </button>
             </footer>
           </article>

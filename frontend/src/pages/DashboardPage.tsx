@@ -12,7 +12,7 @@ function toMonthInputValue(date: Date) {
 
 function formatCurrency(value: string | number) {
   const parsed = typeof value === "number" ? value : Number(value);
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(parsed);
+  return new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(parsed);
 }
 
 export function DashboardPage() {

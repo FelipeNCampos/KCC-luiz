@@ -13,6 +13,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.cashflow import CashFlowRecord  # noqa: F401
+from app.models.oakhill import Acess, Building, Condominio, ContractorHistory, ContractorHistoryCategory, ContractorVisit, Funcionario  # noqa: F401
 from app.models.task import Task, TaskAssignment, TaskMedia, TaskMessage, TaskModuleSettings  # noqa: F401
 from app.models.user import User  # noqa: F401
 
