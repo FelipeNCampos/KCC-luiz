@@ -6,7 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import settings
 from app.db.base import Base
 from app.models.cashflow import CashFlowRecord  # noqa: F401
-from app.models.oakhill import Acess, Building, Condominio, ContractorHistory, ContractorHistoryCategory, ContractorVisit, Funcionario  # noqa: F401
+from app.models.oakhill import Acess, Building, CleanerCheckoutChecklistItem, Condominio, ContractorHistory, ContractorHistoryCategory, ContractorVisit, FlatChecklistItem, FlatInstruction, Funcionario, StockRequest  # noqa: F401
 from app.models.task import Task, TaskAssignment, TaskMedia, TaskMessage, TaskModuleSettings  # noqa: F401
 from app.models.user import User  # noqa: F401
 

@@ -9,7 +9,7 @@ export type Funcionario = {
   status: boolean;
   is_default: boolean;
   nome: string;
-  mobile: number | null;
+  mobile: string | null;
   cargo: number;
   email: string | null;
   condominio_id: string;
@@ -21,6 +21,14 @@ export type Acess = {
   operacao: 0 | 1;
   building_id: string;
   funcionario_id: string;
+  checkout_checklist_items: CleanerCheckoutChecklistItem[];
+};
+export type CleanerOpenAccess = {
+  name: string;
+  mobile: string;
+  in_at: string;
+  building_id: string;
+  building_name: string;
 };
 export type ContractorVisit = {
   id: string;
@@ -66,6 +74,27 @@ export type ContractorHistory = {
   history_updated_at: string;
   condominio_id: string;
 };
+export type FlatChecklistItem = {
+  id: string;
+  label: string;
+  checked: boolean;
+  position: number;
+  building_id: string;
+  condominio_id: string;
+  created_at: string;
+  updated_at: string;
+};
+export type CleanerCheckoutChecklistItem = {
+  id: string;
+  label: string;
+  checked: boolean;
+  position: number;
+  access_id: string;
+  checklist_item_id: string | null;
+  building_id: string;
+  condominio_id: string;
+  created_at: string;
+};
 
 export const oakhillService = {
   async buildings() {
@@ -90,8 +119,28 @@ export const oakhillService = {
     const { data } = await api.patch<Acess>(`/acess/${id}`, payload);
     return data;
   },
+  async timeOutAccess(id: string, payload: { data: string }) {
+    const { data } = await api.post<Acess>(`/acess/${id}/time-out`, payload);
+    return data;
+  },
   async deleteAccess(id: string) {
     await api.delete(`/acess/${id}`);
+  },
+  async cleanerOpen() {
+    const { data } = await api.get<ApiList<CleanerOpenAccess>>("/general-access/cleaner/open");
+    return data;
+  },
+  async cleanerCheckIn(payload: { name: string; mobile: string; building_id: string }) {
+    const { data } = await api.post<Acess>("/general-access/cleaner/check-in", payload);
+    return data;
+  },
+  async cleanerChecklist(mobile: string) {
+    const { data } = await api.get<ApiList<FlatChecklistItem> & { building_id: string; building_name: string }>("/general-access/cleaner/checklist", { params: { mobile } });
+    return data;
+  },
+  async cleanerCheckOut(payload: { mobile: string; checked_item_ids?: string[] }) {
+    const { data } = await api.post<Acess>("/general-access/cleaner/check-out", payload);
+    return data;
   },
   async funcionarios() {
     const { data } = await api.get<ApiList<Funcionario>>("/funcionarios/", { params: { skip: 0, limit: 500 } });
@@ -117,12 +166,20 @@ export const oakhillService = {
     const { data } = await api.post<ContractorPublicVisit>("/contractor-access/check-in", payload);
     return data;
   },
-  async contractorCheckOut(payload: { condominio_id?: string; visit_id: string }) {
+  async contractorCheckOut(payload: { condominio_id?: string; visit_id: string; out_at?: string }) {
     const { data } = await api.post<ContractorPublicVisit>("/contractor-access/check-out", payload);
     return data;
   },
   async contractorVisits(params: { search?: string; date_from?: string; date_to?: string } = {}) {
     const { data } = await api.get<ApiList<ContractorVisit>>("/contractor-access/", { params: { skip: 0, limit: 200, ...params } });
+    return data;
+  },
+  async flatChecklist(flat: string) {
+    const { data } = await api.get<ApiList<FlatChecklistItem> & { flat: string; building_id: string }>(`/flat-checklists/${flat}`);
+    return data;
+  },
+  async saveFlatChecklist(flat: string, items: Array<{ id?: string; label: string; checked: boolean; position: number }>) {
+    const { data } = await api.put<ApiList<FlatChecklistItem> & { flat: string; building_id: string }>(`/flat-checklists/${flat}`, { items });
     return data;
   },
   async updateContractorMedia(id: string, payload: Record<string, string | null>) {

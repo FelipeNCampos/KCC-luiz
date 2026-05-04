@@ -29,6 +29,7 @@ type InvoiceEditorState = {
 
 type TextEditorState = {
   record: CashFlowRow;
+  value: string;
   description: string;
   flat: string;
   error: string | null;
@@ -210,7 +211,13 @@ export function CashFlowPage() {
     };
   }, [reportPreviewUrl]);
 
+  const currentBalance = useMemo(() => formatCurrency(data?.current_balance ?? 0), [data?.current_balance]);
   const monthlyTotal = useMemo(() => formatCurrency(data?.monthly_total ?? 0), [data?.monthly_total]);
+  const openingBalance = useMemo(() => {
+    const current = Number(data?.current_balance ?? 0);
+    const monthly = Number(data?.monthly_total ?? 0);
+    return formatCurrency(current - monthly);
+  }, [data?.current_balance, data?.monthly_total]);
 
   async function reload() {
     const response = await cashFlowService.list({ month, search });
@@ -437,6 +444,7 @@ export function CashFlowPage() {
     setFeedback(null);
     setTextEditor({
       record: row,
+      value: row.amount,
       description: row.description ?? "",
       flat: normalizeFlatValue(row.flat),
       error: null
@@ -447,9 +455,20 @@ export function CashFlowPage() {
     event.preventDefault();
     if (!textEditor) return;
 
+    const parsedValue = Number(textEditor.value);
+    if (!textEditor.value.trim() || !Number.isFinite(parsedValue)) {
+      setTextEditor((current) => (current ? { ...current, error: "Enter a valid value." } : current));
+      return;
+    }
+    if (parsedValue === 0) {
+      setTextEditor((current) => (current ? { ...current, error: "Value must be different from zero." } : current));
+      return;
+    }
+
     setSavingText(true);
     try {
       await cashFlowService.update(textEditor.record.id, {
+        value: textEditor.value,
         description: textEditor.description.trim() || null,
         flat: textEditor.flat.trim() || null
       });
@@ -525,13 +544,21 @@ export function CashFlowPage() {
     >
       <section className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
         <article className="oak-card p-6">
-          <p className="oak-label">Monthly Balance</p>
-          <p className={`mt-3 text-4xl font-extrabold ${Number(data?.monthly_total ?? 0) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}>
-            {monthlyTotal}
-          </p>
-          <p className="mt-2 text-sm font-semibold text-black/60">
-            Total considers all records for {data?.month ?? month}, even when search is active.
-          </p>
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-start">
+            <div>
+              <p className="oak-label">Monthly Balance</p>
+              <p className={`mt-3 text-4xl font-extrabold ${Number(data?.current_balance ?? 0) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}>
+                {currentBalance}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-black/60">
+                Only this month: {monthlyTotal}
+              </p>
+            </div>
+            <div className="rounded-xl border border-oak-border bg-oak-panel p-4">
+              <p className="oak-label">Last Mouth</p>
+              <p className="mt-2 text-2xl font-extrabold text-oak-coffee">{openingBalance}</p>
+            </div>
+          </div>
         </article>
 
         <div className="grid gap-3 md:h-full">
@@ -911,6 +938,18 @@ export function CashFlowPage() {
             </header>
 
             <form className="grid gap-4 p-6" onSubmit={handleSaveText}>
+              <label className="grid gap-2">
+                <span className="oak-label">Value</span>
+                <input
+                  className="oak-input"
+                  step="0.01"
+                  type="number"
+                  value={textEditor.value}
+                  onChange={(event) => setTextEditor((current) => (current ? { ...current, value: event.target.value, error: null } : current))}
+                  required
+                />
+              </label>
+
               <label className="grid gap-2">
                 <span className="oak-label">Comments</span>
                 <textarea

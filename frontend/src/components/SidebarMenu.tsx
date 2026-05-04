@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   Building2,
+  BookOpen,
   CircleDollarSign,
   HardHat,
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Package,
   QrCode,
   Settings2,
   Sparkles,
@@ -123,9 +125,24 @@ export function SidebarMenu() {
                 <span>Cleaner</span>
               </NavLink>
 
-              <NavLink to="/caretaker" className={navItemClass}>
+              <NavLink to="/checklist" className={navItemClass}>
+                <ListChecks size={18} strokeWidth={2.1} />
+                <span>Checklist</span>
+              </NavLink>
+
+              <NavLink to="/contractor" className={navItemClass}>
                 <HardHat size={18} strokeWidth={2.1} />
-                <span>Caretaker</span>
+                <span>Contractor</span>
+              </NavLink>
+
+              <NavLink to="/stock" className={navItemClass}>
+                <Package size={18} strokeWidth={2.1} />
+                <span>Stock</span>
+              </NavLink>
+
+              <NavLink to="/instructions" className={navItemClass}>
+                <BookOpen size={18} strokeWidth={2.1} />
+                <span>Instruções</span>
               </NavLink>
             </>
           ) : null}

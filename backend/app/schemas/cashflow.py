@@ -20,8 +20,16 @@ class CashFlowCreate(BaseModel):
 
 
 class CashFlowUpdate(BaseModel):
+    value: Decimal | None = None
     description: str | None = Field(default=None, max_length=255)
     flat: str | None = Field(default=None, max_length=120)
+
+    @field_validator("value")
+    @classmethod
+    def validate_optional_non_zero_value(cls, value: Decimal | None) -> Decimal | None:
+        if value == 0:
+            raise ValueError("Value must be different from zero")
+        return value
 
 
 class CashFlowRow(BaseModel):
@@ -43,6 +51,7 @@ class CashFlowRow(BaseModel):
 class CashFlowListResponse(BaseModel):
     month: str
     monthly_total: Decimal
+    current_balance: Decimal
     items: list[CashFlowRow]
 
 

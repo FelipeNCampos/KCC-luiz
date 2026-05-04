@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 
 import { oakhillService } from "../services/oakhill";
+import { closePublicPage } from "../utils/closePublicPage";
 
 export function CleanerAccessPage() {
   const params = new URLSearchParams(window.location.search);
@@ -38,10 +39,6 @@ export function CleanerAccessPage() {
     try {
       await oakhillService.createAccess({ operacao: operation, building_id: flat });
       setConfirmed(true);
-      window.setTimeout(() => {
-        window.close();
-        window.location.href = "about:blank";
-      }, 5000);
     } catch (requestError) {
       const detail = (requestError as { response?: { data?: { detail?: string } } }).response?.data?.detail;
       setError(detail ?? "Unable to confirm record.");
@@ -74,6 +71,7 @@ export function CleanerAccessPage() {
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-oakLg">
             <CheckCircle2 className="mx-auto text-emerald-700" size={46} />
             <h2 className="mt-4 text-xl font-extrabold text-oak-coffee">Record confirmed</h2>
+            <button className="oak-button-primary mt-5 w-full" type="button" onClick={closePublicPage}>OK</button>
           </div>
         </div>
       ) : null}

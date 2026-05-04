@@ -94,7 +94,94 @@ def test_create_record_increment_and_sign_rules(client: TestClient) -> None:
 
     body = list_response.json()
     assert body["monthly_total"] == "110.00"
+    assert body["current_balance"] == "110.00"
     assert [item["balance"] for item in body["items"]] == ["150.00", "110.00"]
+
+
+def test_payment_numbers_are_dynamic_by_record_date(client: TestClient) -> None:
+    admin_token = get_admin_token(client, email="dynamic-number-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    day_20_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "Yes",
+            "date": "2026-04-20",
+            "value": "-80.00",
+            "description": "Invoice day 20",
+        },
+        files={"invoice_media": ("day-20.pdf", make_invoice_pdf("Day 20"), "application/pdf")},
+    )
+    assert day_20_response.status_code == 201
+    assert day_20_response.json()["payment_number"] == 1
+
+    day_19_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "Yes",
+            "date": "2026-04-19",
+            "value": "-60.00",
+            "description": "Invoice day 19",
+        },
+        files={"invoice_media": ("day-19.pdf", make_invoice_pdf("Day 19"), "application/pdf")},
+    )
+    assert day_19_response.status_code == 201
+    assert day_19_response.json()["payment_number"] == 1
+
+    list_response = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-04"})
+    assert list_response.status_code == 200
+
+    items = list_response.json()["items"]
+    assert [item["record_date"] for item in items] == ["2026-04-19", "2026-04-20"]
+    assert [item["payment_number"] for item in items] == [1, 2]
+
+
+def test_month_balance_starts_from_previous_month_closing_balance(client: TestClient) -> None:
+    admin_token = get_admin_token(client, email="carry-balance-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    records = [
+        {
+            "invoice": "No",
+            "date": "2026-01-10",
+            "value": "2500.00",
+            "description": "January income",
+        },
+        {
+            "invoice": "No",
+            "date": "2026-01-20",
+            "value": "-500.00",
+            "description": "January cost",
+        },
+        {
+            "invoice": "No",
+            "date": "2026-02-05",
+            "value": "-300.00",
+            "description": "February cost",
+        },
+        {
+            "invoice": "No",
+            "date": "2026-02-10",
+            "value": "100.00",
+            "description": "February income",
+        },
+    ]
+
+    for payload in records:
+        assert client.post("/api/v1/cashflow", headers=headers, data=payload).status_code == 201
+
+    january_response = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-01"})
+    assert january_response.status_code == 200
+    assert january_response.json()["current_balance"] == "2000.00"
+    assert [item["balance"] for item in january_response.json()["items"]] == ["2500.00", "2000.00"]
+
+    february_response = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-02"})
+    assert february_response.status_code == 200
+    assert february_response.json()["monthly_total"] == "-200.00"
+    assert february_response.json()["current_balance"] == "1800.00"
+    assert [item["balance"] for item in february_response.json()["items"]] == ["1700.00", "1800.00"]
 
 
 def test_month_filter_search_and_month_total_behavior(client: TestClient) -> None:
@@ -132,6 +219,7 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     assert april_response.status_code == 200
     assert len(april_response.json()["items"]) == 2
     assert april_response.json()["monthly_total"] == "150.00"
+    assert april_response.json()["current_balance"] == "150.00"
 
     april_search = client.get(
         "/api/v1/cashflow",
@@ -141,6 +229,7 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     assert april_search.status_code == 200
     assert len(april_search.json()["items"]) == 1
     assert april_search.json()["monthly_total"] == "150.00"
+    assert april_search.json()["current_balance"] == "150.00"
 
 
 def test_permission_for_non_admin_or_manager(client: TestClient) -> None:
@@ -233,12 +322,20 @@ def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> No
     update_response = client.patch(
         f"/api/v1/cashflow/{record['id']}",
         headers=headers,
-        json={"description": "Updated comment", "flat": "F505"},
+        json={"value": "125.00", "description": "Updated comment", "flat": "F505"},
     )
     assert update_response.status_code == 200
+    assert update_response.json()["amount"] == "125.00"
     assert update_response.json()["description"] == "Updated comment"
     assert update_response.json()["flat"] == "F505"
-    assert update_response.json()["balance"] == "75.00"
+    assert update_response.json()["balance"] == "125.00"
+
+    zero_update_response = client.patch(
+        f"/api/v1/cashflow/{record['id']}",
+        headers=headers,
+        json={"value": "0"},
+    )
+    assert zero_update_response.status_code == 422
 
     invoice_response = client.patch(
         f"/api/v1/cashflow/{record['id']}/invoice",

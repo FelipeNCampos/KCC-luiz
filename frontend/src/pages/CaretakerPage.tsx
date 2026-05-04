@@ -1,12 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { FileText, Settings2, X } from "lucide-react";
+import { FileText, Search, Settings2, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
 import { InvoiceModal } from "../components/InvoiceModal";
 import { ContractorVisit, oakhillService } from "../services/oakhill";
 
-const GOAL_KEY_PREFIX = "oakhill-caretaker-monthly-goal-hours-";
-const WEEKLY_GOAL_KEY_PREFIX = "oakhill-caretaker-weekly-goal-hours-";
+const GOAL_KEY_PREFIX = "oakhill-contractor-monthly-goal-hours-";
+const WEEKLY_GOAL_KEY_PREFIX = "oakhill-contractor-weekly-goal-hours-";
 
 function monthlyGoalKey(month: string) {
   return `${GOAL_KEY_PREFIX}${month}`;
@@ -67,6 +67,17 @@ function formatTime(value: string) {
   return new Intl.DateTimeFormat("en-GB", { timeStyle: "short" }).format(new Date(value));
 }
 
+function timeInputValue(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function withSelectedTime(source: string, time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  const date = new Date(source);
+  date.setHours(hours, minutes, 0, 0);
+  return date.toISOString();
+}
+
 function ProgressCard({
   title,
   subtitle,
@@ -102,27 +113,31 @@ function ProgressCard({
 export function CaretakerPage() {
   const initialMonth = monthValue();
   const [month, setMonth] = useState(initialMonth);
+  const [search, setSearch] = useState("");
   const [records, setRecords] = useState<ContractorVisit[]>([]);
   const [goal, setGoal] = useState(() => Number(localStorage.getItem(monthlyGoalKey(initialMonth)) ?? 0));
   const [weeklyGoal, setWeeklyGoal] = useState(() => Number(localStorage.getItem(weeklyGoalKey(initialMonth)) ?? 0));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const [checkingOutId, setCheckingOutId] = useState<string | null>(null);
+  const [outTarget, setOutTarget] = useState<ContractorVisit | null>(null);
+  const [outTime, setOutTime] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const { start, end } = monthBounds(month);
 
   useEffect(() => {
     oakhillService
-      .contractorVisits({ date_from: start, date_to: end })
+      .contractorVisits({ date_from: start, date_to: end, search: search.trim() || undefined })
       .then((response) => setRecords(response.data))
       .catch(() => setRecords([]));
-  }, [start, end]);
+  }, [start, end, search]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsSettingsOpen(false);
         setIsInvoiceOpen(false);
+        setOutTarget(null);
       }
     };
 
@@ -160,15 +175,28 @@ export function CaretakerPage() {
     setIsSettingsOpen(false);
   }
 
-  async function handleTimeOut(record: ContractorVisit) {
+  function openOutModal(record: ContractorVisit) {
+    setFeedback(null);
+    setOutTarget(record);
+    setOutTime(timeInputValue());
+  }
+
+  async function handleTimeOut(event: FormEvent) {
+    event.preventDefault();
+    if (!outTarget) return;
     if (checkingOutId) return;
 
-    setCheckingOutId(record.id);
+    setCheckingOutId(outTarget.id);
     setFeedback(null);
     try {
-      await oakhillService.contractorCheckOut({ condominio_id: record.condominio_id, visit_id: record.id });
+      await oakhillService.contractorCheckOut({
+        condominio_id: outTarget.condominio_id,
+        visit_id: outTarget.id,
+        out_at: withSelectedTime(outTarget.in_at, outTime),
+      });
       setFeedback("Time out saved successfully.");
-      const response = await oakhillService.contractorVisits({ date_from: start, date_to: end });
+      setOutTarget(null);
+      const response = await oakhillService.contractorVisits({ date_from: start, date_to: end, search: search.trim() || undefined });
       setRecords(response.data);
     } catch {
       setFeedback("Unable to save time out.");
@@ -178,7 +206,7 @@ export function CaretakerPage() {
   }
 
   return (
-    <DashboardShell title="Caretaker" subtitle="Caretaker hours, goals and records">
+    <DashboardShell title="Contractor" subtitle="Contractor hours, goals and records">
       <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
         <button className="oak-button-primary" type="button" onClick={() => setIsInvoiceOpen(true)}>
           <FileText size={16} />
@@ -208,8 +236,24 @@ export function CaretakerPage() {
       </section>
 
       <section className="oak-card overflow-x-auto px-2 sm:px-4">
-        <div className="flex items-center justify-between gap-3 border-b border-oak-border p-4">
-          <h2 className="text-lg font-extrabold text-oak-coffee">Records</h2>
+        <div className="grid gap-4 border-b border-oak-border p-4 lg:grid-cols-[auto_minmax(160px,220px)_minmax(220px,1fr)_auto] lg:items-end">
+          <h2 className="text-lg font-extrabold text-oak-coffee lg:pb-2">Records</h2>
+          <label className="grid gap-2">
+            <span className="oak-label">Month</span>
+            <input className="oak-input" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+          </label>
+          <label className="grid min-w-0 gap-2">
+            <span className="oak-label">Search</span>
+            <span className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-oak-taupe" />
+              <input
+                className="oak-input pl-9"
+                placeholder="Search by name, company, flat or job"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </span>
+          </label>
           <button className="oak-button-primary hidden md:inline-flex" type="button" onClick={() => setIsInvoiceOpen(true)}>
             <FileText size={16} />
             Emit invoice
@@ -245,9 +289,9 @@ export function CaretakerPage() {
                       className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
                       type="button"
                       disabled={checkingOutId === record.id}
-                      onClick={() => void handleTimeOut(record)}
+                      onClick={() => openOutModal(record)}
                     >
-                      {checkingOutId === record.id ? "Saving..." : "Time out"}
+                      {checkingOutId === record.id ? "Saving..." : "OUT"}
                     </button>
                   )}
                 </td>
@@ -258,12 +302,41 @@ export function CaretakerPage() {
         </table>
       </section>
 
+      {outTarget ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
+          <article className="w-full max-w-md rounded-2xl border border-oak-border bg-white shadow-oakLg">
+            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
+              <div>
+                <p className="oak-label">Contractor</p>
+                <h2 className="text-lg font-extrabold text-oak-coffee">Save OUT time</h2>
+              </div>
+              <button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={() => setOutTarget(null)}>
+                <X size={17} />
+              </button>
+            </header>
+            <form className="grid gap-4 p-6" onSubmit={(event) => void handleTimeOut(event)}>
+              <div className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/65">
+                IN: {formatDate(outTarget.in_at)} {formatTime(outTarget.in_at)}
+              </div>
+              <label className="grid gap-2">
+                <span className="oak-label">OUT time</span>
+                <input className="oak-input" type="time" value={outTime} onChange={(event) => setOutTime(event.target.value)} required />
+              </label>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button className="oak-button-secondary" type="button" onClick={() => setOutTarget(null)}>Cancel</button>
+                <button className="oak-button-primary" disabled={checkingOutId === outTarget.id} type="submit">{checkingOutId === outTarget.id ? "Saving..." : "Save OUT"}</button>
+              </div>
+            </form>
+          </article>
+        </div>
+      ) : null}
+
       {isSettingsOpen ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
           <article className="w-full max-w-md rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
-                <p className="oak-label">Caretaker</p>
+                <p className="oak-label">Contractor</p>
                 <h2 className="text-lg font-extrabold text-oak-coffee">Settings</h2>
               </div>
               <button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={() => setIsSettingsOpen(false)}>
@@ -286,8 +359,8 @@ export function CaretakerPage() {
       {isInvoiceOpen ? (
         <InvoiceModal
           open={isInvoiceOpen}
-          sourceLabel="Caretaker"
-          defaultDescription="Caretaker service invoice"
+          sourceLabel="Contractor"
+          defaultDescription="Contractor service invoice"
           onClose={() => setIsInvoiceOpen(false)}
           onCreated={(message) => setFeedback(message)}
         />

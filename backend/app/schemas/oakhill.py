@@ -24,7 +24,7 @@ class FuncionarioCreate(BaseModel):
     status: bool = True
     is_default: bool = False
     nome: str
-    mobile: int | None = None
+    mobile: str | None = None
     cargo: int
     email: str | None = None
     condominio_id: str
@@ -34,7 +34,7 @@ class FuncionarioUpdate(BaseModel):
     status: bool | None = None
     is_default: bool | None = None
     nome: str | None = None
-    mobile: int | None = None
+    mobile: str | None = None
     cargo: int | None = None
     email: str | None = None
 
@@ -57,6 +57,22 @@ class AcessUpdate(BaseModel):
     building_id: str | None = None
 
 
+class AcessTimeOut(BaseModel):
+    data: datetime
+
+
+class CleanerCheckoutChecklistItemRead(BaseModel):
+    id: str
+    label: str
+    checked: bool
+    position: int
+    access_id: str
+    checklist_item_id: str | None = None
+    building_id: str
+    condominio_id: str
+    created_at: datetime
+
+
 class AcessRead(BaseModel):
     id: str
     status: bool
@@ -64,11 +80,33 @@ class AcessRead(BaseModel):
     operacao: int
     building_id: str
     funcionario_id: str
+    checkout_checklist_items: list[CleanerCheckoutChecklistItemRead] = Field(default_factory=list)
 
 
 class AcessActiveRead(BaseModel):
     has_open_session: bool
     building_id: str | None = None
+
+
+class CleanerOpenAccess(BaseModel):
+    name: str
+    mobile: str
+    in_at: datetime
+    building_id: str
+    building_name: str
+
+
+class CleanerCheckIn(BaseModel):
+    condominio_id: str | None = None
+    name: str
+    mobile: str
+    building_id: str = "50"
+
+
+class CleanerCheckOut(BaseModel):
+    condominio_id: str | None = None
+    mobile: str
+    checked_item_ids: list[str] = Field(default_factory=list)
 
 
 class ContractorPublicVisit(BaseModel):
@@ -106,6 +144,7 @@ class ContractorCheckIn(BaseModel):
 class ContractorCheckOut(BaseModel):
     condominio_id: str | None = None
     visit_id: str
+    out_at: datetime | None = None
 
 
 class ContractorVisitRead(BaseModel):
@@ -137,6 +176,28 @@ class ContractorMediaUpdate(BaseModel):
     extra_media_3_data: str | None = None
     extra_media_4_name: str | None = None
     extra_media_4_data: str | None = None
+
+
+class FlatChecklistItemWrite(BaseModel):
+    id: str | None = None
+    label: str
+    checked: bool = False
+    position: int
+
+
+class FlatChecklistItemRead(BaseModel):
+    id: str
+    label: str
+    checked: bool
+    position: int
+    building_id: str
+    condominio_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class FlatChecklistWrite(BaseModel):
+    items: list[FlatChecklistItemWrite] = Field(default_factory=list)
 
 
 class ContractorHistoryCategoryCreate(BaseModel):

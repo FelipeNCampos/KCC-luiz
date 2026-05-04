@@ -81,11 +81,12 @@ class CashFlowService:
     ) -> CashFlowListResponse:
         records = self.repository.list_range_records(start_date, end_date)
         query = (search or "").strip().lower()
-        running_balance = Decimal("0")
+        opening_balance = self.repository.get_balance_before(start_date)
+        running_balance = opening_balance
         period_total = Decimal("0")
         items: list[CashFlowRow] = []
 
-        for record in records:
+        for dynamic_payment_number, record in enumerate(records, start=1):
             period_total += record.amount
             running_balance += record.amount
 
@@ -98,7 +99,7 @@ class CashFlowService:
             items.append(
                 CashFlowRow(
                     id=record.id,
-                    payment_number=record.payment_number,
+                    payment_number=dynamic_payment_number,
                     has_invoice=record.has_invoice,
                     invoice_media_name=record.invoice_media_name,
                     record_date=record.record_date,
@@ -111,7 +112,12 @@ class CashFlowService:
                 )
             )
 
-        return CashFlowListResponse(month=period_label, monthly_total=period_total, items=items)
+        return CashFlowListResponse(
+            month=period_label,
+            monthly_total=period_total,
+            current_balance=opening_balance + period_total,
+            items=items,
+        )
 
     def delete_record(self, record_id: int) -> None:
         record = self.repository.get_by_id(record_id)
@@ -134,6 +140,8 @@ class CashFlowService:
             record.description = self._clean_optional_text(payload.description)
         if "flat" in payload.model_fields_set:
             record.flat = self._clean_optional_text(payload.flat)
+        if "value" in payload.model_fields_set and payload.value is not None:
+            record.amount = payload.value
         return self.repository.save(record)
 
     def update_invoice_media(

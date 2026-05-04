@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 
 import { ContractorVisit, oakhillService } from "../services/oakhill";
+import { closePublicPage } from "../utils/closePublicPage";
 
 const FLATS = ["50", "51", "52"];
 
@@ -38,10 +39,6 @@ export function ContractorAccessPage() {
       } else {
         await oakhillService.contractorCheckOut({ condominio_id: condominioId || undefined, visit_id: visitId });
         setConfirmed({ mode: "out" });
-        window.setTimeout(() => {
-          window.close();
-          window.location.href = "about:blank";
-        }, 5000);
       }
     } catch (requestError) {
       const detail = (requestError as { response?: { data?: { detail?: string } } }).response?.data?.detail;
@@ -56,7 +53,7 @@ export function ContractorAccessPage() {
       <section className="mx-auto max-w-xl py-8">
         <form className="rounded-2xl border border-oak-border bg-white p-6 shadow-oakLg" onSubmit={(event) => void submit(event)}>
           <p className="oak-label">OakHill Park</p>
-          <h1 className="mt-2 text-3xl font-extrabold text-oak-coffee">Caretaker access</h1>
+          <h1 className="mt-2 text-3xl font-extrabold text-oak-coffee">Contractor access</h1>
           <div className="mt-5 grid grid-cols-2 rounded-xl bg-oak-panel p-1">
             <button className={`rounded-lg py-3 font-extrabold ${mode === "in" ? "bg-white text-oak-coffee shadow-oak" : "text-oak-muted"}`} type="button" onClick={() => setMode("in")}>IN</button>
             <button className={`rounded-lg py-3 font-extrabold ${mode === "out" ? "bg-white text-oak-coffee shadow-oak" : "text-oak-muted"}`} type="button" onClick={() => setMode("out")}>OUT</button>
@@ -116,7 +113,7 @@ export function ContractorAccessPage() {
                 })}
               </div>
             ) : null}
-            <button className="oak-button-primary mt-5 w-full" type="button" onClick={() => setConfirmed(null)}>Done</button>
+            <button className="oak-button-primary mt-5 w-full" type="button" onClick={closePublicPage}>OK</button>
           </div>
         </div>
       ) : null}

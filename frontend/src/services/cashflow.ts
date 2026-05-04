@@ -17,6 +17,7 @@ export type CashFlowRow = {
 export type CashFlowListResponse = {
   month: string;
   monthly_total: string;
+  current_balance: string;
   items: CashFlowRow[];
 };
 
@@ -34,6 +35,7 @@ export type CreateCashFlowPayload = {
 };
 
 export type UpdateCashFlowPayload = {
+  value?: string | null;
   description?: string | null;
   flat?: string | null;
 };

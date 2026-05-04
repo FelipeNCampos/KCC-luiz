@@ -3,8 +3,6 @@ import { Download, ExternalLink } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
 
-const FLATS = ["50", "51", "52"];
-
 function qrUrl(link: string) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(link)}`;
 }
@@ -32,33 +30,46 @@ function QrCard({ title, link, fileName }: { title: string; link: string; fileNa
 }
 
 export function QrCodesPage() {
-  const [tab, setTab] = useState<"cleaner" | "caretaker">("cleaner");
+  const [tab, setTab] = useState<"general" | "stock" | "instructions">("general");
   const origin = window.location.origin;
-  const caretakerLink = `${origin}/contractor-access`;
+  const accessLink = `${origin}/access`;
+  const stockLink = `${origin}/stock-request`;
+  const instructionLinks = ["50", "51", "52"].map((flat) => ({
+    flat,
+    link: `${origin}/instructions-public?flat=${flat}`,
+  }));
 
   return (
-    <DashboardShell title="QR Codes" subtitle="Public form links for cleaner and caretaker records">
+    <DashboardShell title="QR Codes" subtitle="Public form link for cleaner and contractor records">
       <div className="flex flex-wrap gap-2">
-        <button className={tab === "cleaner" ? "oak-button-primary" : "oak-button-secondary"} type="button" onClick={() => setTab("cleaner")}>
-          Cleaner
+        <button className={tab === "general" ? "oak-button-primary" : "oak-button-secondary"} type="button" onClick={() => setTab("general")}>
+          Geral
         </button>
-        <button className={tab === "caretaker" ? "oak-button-primary" : "oak-button-secondary"} type="button" onClick={() => setTab("caretaker")}>
-          Caretaker
+        <button className={tab === "stock" ? "oak-button-primary" : "oak-button-secondary"} type="button" onClick={() => setTab("stock")}>
+          Stock
+        </button>
+        <button className={tab === "instructions" ? "oak-button-primary" : "oak-button-secondary"} type="button" onClick={() => setTab("instructions")}>
+          Instruções
         </button>
       </div>
 
-      {tab === "cleaner" ? (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {FLATS.map((flat) => {
-              const link = `${origin}/cleaner-access?flat=${flat}`;
-              return <QrCard key={flat} title={`Cleaner - Flat ${flat}`} link={link} fileName={`qr-cleaner-flat-${flat}.png`} />;
-            })}
+      {tab === "general" ? (
+        <section className="max-w-md">
+          <QrCard title="Cleaner / Contractor (IN/OUT)" link={accessLink} fileName="qr-cleaner-contractor.png" />
         </section>
       ) : null}
 
-      {tab === "caretaker" ? (
+      {tab === "stock" ? (
         <section className="max-w-md">
-          <QrCard title="Caretaker" link={caretakerLink} fileName="qr-caretaker.png" />
+          <QrCard title="Stock request" link={stockLink} fileName="qr-stock-request.png" />
+        </section>
+      ) : null}
+
+      {tab === "instructions" ? (
+        <section className="grid gap-4 md:grid-cols-3">
+          {instructionLinks.map((item) => (
+            <QrCard key={item.flat} title={`Instructions Flat ${item.flat}`} link={item.link} fileName={`qr-instructions-flat-${item.flat}.png`} />
+          ))}
         </section>
       ) : null}
     </DashboardShell>

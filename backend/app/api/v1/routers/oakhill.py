@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
 from app.api.deps import get_current_user, require_roles
 from app.core.config import settings
@@ -17,6 +17,8 @@ from app.models.oakhill import (
     ContractorHistory,
     ContractorHistoryCategory,
     ContractorVisit,
+    CleanerCheckoutChecklistItem,
+    FlatChecklistItem,
     Funcionario,
 )
 from app.models.user import User
@@ -24,8 +26,13 @@ from app.schemas.oakhill import (
     AcessActiveRead,
     AcessCreate,
     AcessRead,
+    AcessTimeOut,
     AcessUpdate,
     BuildingRead,
+    CleanerCheckIn,
+    CleanerCheckOut,
+    CleanerCheckoutChecklistItemRead,
+    CleanerOpenAccess,
     ContractorBuildingRead,
     ContractorCheckIn,
     ContractorCheckOut,
@@ -38,6 +45,8 @@ from app.schemas.oakhill import (
     ContractorPublicVisit,
     ContractorVisitRead,
     ExecuteDueRead,
+    FlatChecklistItemRead,
+    FlatChecklistWrite,
     FuncionarioCreate,
     FuncionarioRead,
     FuncionarioUpdate,
@@ -148,6 +157,7 @@ def open_access(db: Session, funcionario_id: str) -> Acess | None:
 
 
 def row_access(item: Acess) -> AcessRead:
+    checkout_items = sorted(item.checkout_checklist_items, key=lambda row: (row.position, row.created_at))
     return AcessRead(
         id=item.id,
         status=item.status,
@@ -155,6 +165,20 @@ def row_access(item: Acess) -> AcessRead:
         operacao=item.operacao,
         building_id=item.building_id,
         funcionario_id=item.funcionario_id,
+        checkout_checklist_items=[
+            CleanerCheckoutChecklistItemRead(
+                id=row.id,
+                label=row.label,
+                checked=row.checked,
+                position=row.position,
+                access_id=row.access_id,
+                checklist_item_id=row.checklist_item_id,
+                building_id=row.building_id,
+                condominio_id=row.condominio_id,
+                created_at=row.created_at,
+            )
+            for row in checkout_items
+        ],
     )
 
 
@@ -180,6 +204,77 @@ def maybe_send_cleaner_sms(body: str) -> None:
 
 def valid_cleaner_building_name(name: str) -> bool:
     return name.strip() in {f"Flat {flat}" for flat in PUBLIC_FLATS}
+
+
+def normalize_mobile_digits(value: str) -> str:
+    digits = re.sub(r"\D+", "", value)
+    if not digits:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Mobile is required")
+    return digits
+
+
+def cleaner_general_building(db: Session, condominio_id: str) -> Building:
+    building = db.scalar(
+        select(Building).where(Building.condominio_id == condominio_id, Building.nome == "Cleaner")
+    )
+    if building is None:
+        building = Building(nome="Cleaner", condominio_id=condominio_id)
+        db.add(building)
+        db.commit()
+        db.refresh(building)
+    return building
+
+
+def cleaner_by_mobile(db: Session, condominio_id: str, mobile: str) -> Funcionario | None:
+    mobile_number = normalize_mobile_digits(mobile)
+    return db.scalar(
+        select(Funcionario).where(
+            Funcionario.condominio_id == condominio_id,
+            Funcionario.cargo == 0,
+            Funcionario.mobile == mobile_number,
+        )
+    )
+
+
+def flat_checklist_rows(db: Session, condominio_id: str, building_id: str) -> list[FlatChecklistItem]:
+    return list(
+        db.scalars(
+            select(FlatChecklistItem)
+            .where(FlatChecklistItem.condominio_id == condominio_id, FlatChecklistItem.building_id == building_id)
+            .order_by(FlatChecklistItem.position.asc(), FlatChecklistItem.created_at.asc())
+        )
+    )
+
+
+def get_or_create_cleaner_by_mobile(db: Session, condominio_id: str, name: str, mobile: str) -> Funcionario:
+    cleaned_name = name.strip()
+    if not cleaned_name:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name is required")
+    mobile_number = normalize_mobile_digits(mobile)
+    cleaner = db.scalar(
+        select(Funcionario).where(
+            Funcionario.condominio_id == condominio_id,
+            Funcionario.cargo == 0,
+            Funcionario.mobile == mobile_number,
+        )
+    )
+    if cleaner is None:
+        cleaner = Funcionario(
+            status=True,
+            is_default=False,
+            nome=cleaned_name,
+            mobile=mobile_number,
+            cargo=0,
+            email=None,
+            condominio_id=condominio_id,
+        )
+    else:
+        cleaner.nome = cleaned_name
+        cleaner.status = True
+    db.add(cleaner)
+    db.commit()
+    db.refresh(cleaner)
+    return cleaner
 
 
 def day_bounds(moment: datetime) -> tuple[datetime, datetime]:
@@ -280,7 +375,7 @@ def list_access(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin", "manager", "employee")),
 ) -> dict[str, list[AcessRead] | int]:
-    statement = select(Acess).order_by(Acess.data.desc()).offset(skip).limit(limit)
+    statement = select(Acess).options(selectinload(Acess.checkout_checklist_items)).order_by(Acess.data.desc()).offset(skip).limit(limit)
     count = db.scalar(select(func.count(Acess.id))) or 0
     rows = list(db.scalars(statement))
     return {"data": [row_access(row) for row in rows], "count": count}
@@ -301,6 +396,30 @@ def update_access(access_id: str, payload: AcessUpdate, db: Session = Depends(ge
     return row_access(item)
 
 
+@router.post("/acess/{access_id}/time-out", response_model=AcessRead, status_code=status.HTTP_201_CREATED)
+def time_out_access(access_id: str, payload: AcessTimeOut, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "manager", "employee"))) -> AcessRead:
+    opened = db.get(Acess, access_id)
+    if opened is None or opened.operacao != 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Open access not found")
+    existing_out = db.scalar(
+        select(Acess.id).where(
+            Acess.funcionario_id == opened.funcionario_id,
+            Acess.operacao == 1,
+            Acess.data > opened.data,
+        )
+    )
+    if existing_out is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Access already has time out")
+    moment = payload.data.astimezone(UTC)
+    if moment <= opened.data:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="out_at must be after in_at")
+    access = Acess(status=True, operacao=1, building_id=opened.building_id, funcionario_id=opened.funcionario_id, data=moment)
+    db.add(access)
+    db.commit()
+    db.refresh(access)
+    return row_access(access)
+
+
 @router.delete("/acess/{access_id}")
 def delete_access(access_id: str, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "manager", "employee"))) -> dict[str, str]:
     item = db.get(Acess, access_id)
@@ -309,6 +428,125 @@ def delete_access(access_id: str, db: Session = Depends(get_db), _: User = Depen
     db.delete(item)
     db.commit()
     return {"message": "Access deleted"}
+
+
+@router.get("/general-access/cleaner/open")
+def cleaner_open_access(
+    condominio_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, list[CleanerOpenAccess] | int]:
+    condominio = db.get(Condominio, condominio_id) if condominio_id else default_condominio(db)
+    if condominio is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Condominio not found")
+    out_access = aliased(Acess)
+    rows = list(
+        db.execute(
+            select(Acess, Funcionario)
+            .join(Funcionario, Acess.funcionario_id == Funcionario.id)
+            .where(
+                Funcionario.condominio_id == condominio.id,
+                Funcionario.cargo == 0,
+                Funcionario.mobile.is_not(None),
+                Acess.operacao == 0,
+                ~select(out_access.id)
+                .where(
+                    out_access.funcionario_id == Acess.funcionario_id,
+                    out_access.operacao == 1,
+                    out_access.data > Acess.data,
+                )
+                .exists(),
+            )
+            .order_by(Acess.data.desc())
+        )
+    )
+    data: list[CleanerOpenAccess] = []
+    for opened, cleaner in rows:
+        data.append(
+            CleanerOpenAccess(
+                name=cleaner.nome,
+                mobile=str(cleaner.mobile),
+                in_at=opened.data,
+                building_id=opened.building_id,
+                building_name=opened.building.nome,
+            )
+        )
+    return {"data": data, "count": len(data)}
+
+
+@router.get("/general-access/cleaner/checklist")
+def cleaner_checkout_checklist(
+    mobile: str,
+    condominio_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, list[FlatChecklistItemRead] | int | str]:
+    condominio = db.get(Condominio, condominio_id) if condominio_id else default_condominio(db)
+    if condominio is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Condominio not found")
+    cleaner = cleaner_by_mobile(db, condominio.id, mobile)
+    if cleaner is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cleaner not found")
+    opened = open_access(db, cleaner.id)
+    if opened is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cleaner does not have an open session to close")
+    rows = flat_checklist_rows(db, condominio.id, opened.building_id)
+    return {
+        "building_id": opened.building_id,
+        "building_name": opened.building.nome,
+        "data": [checklist_read(row) for row in rows],
+        "count": len(rows),
+    }
+
+
+@router.post("/general-access/cleaner/check-in", response_model=AcessRead, status_code=status.HTTP_201_CREATED)
+def cleaner_check_in(payload: CleanerCheckIn, db: Session = Depends(get_db)) -> AcessRead:
+    condominio = db.get(Condominio, payload.condominio_id) if payload.condominio_id else default_condominio(db)
+    if condominio is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Condominio not found")
+    cleaner = get_or_create_cleaner_by_mobile(db, condominio.id, payload.name, payload.mobile)
+    if open_access(db, cleaner.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cleaner already has an open session")
+    building = resolve_public_flat(db, payload.building_id, condominio.id)
+    access = Acess(status=True, operacao=0, building_id=building.id, funcionario_id=cleaner.id, data=now_utc())
+    db.add(access)
+    db.commit()
+    db.refresh(access)
+    return row_access(access)
+
+
+@router.post("/general-access/cleaner/check-out", response_model=AcessRead)
+def cleaner_check_out(payload: CleanerCheckOut, db: Session = Depends(get_db)) -> AcessRead:
+    condominio = db.get(Condominio, payload.condominio_id) if payload.condominio_id else default_condominio(db)
+    if condominio is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Condominio not found")
+    cleaner = cleaner_by_mobile(db, condominio.id, payload.mobile)
+    if cleaner is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cleaner not found")
+    opened = open_access(db, cleaner.id)
+    if opened is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cleaner does not have an open session to close")
+    checklist_rows = flat_checklist_rows(db, condominio.id, opened.building_id)
+    required_ids = {row.id for row in checklist_rows}
+    checked_ids = set(payload.checked_item_ids)
+    if required_ids and checked_ids != required_ids:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="All checklist items must be checked")
+    access = Acess(status=True, operacao=1, building_id=opened.building_id, funcionario_id=cleaner.id, data=now_utc())
+    db.add(access)
+    db.flush()
+    for index, item in enumerate(checklist_rows):
+        db.add(
+            CleanerCheckoutChecklistItem(
+                access_id=access.id,
+                checklist_item_id=item.id,
+                label=item.label,
+                checked=True,
+                position=index,
+                building_id=opened.building_id,
+                condominio_id=condominio.id,
+            )
+        )
+    db.commit()
+    db.refresh(access)
+    return row_access(access)
 
 
 @router.get("/funcionarios/")
@@ -398,6 +636,19 @@ def visit_read(row: ContractorVisit) -> ContractorVisitRead:
     )
 
 
+def checklist_read(row: FlatChecklistItem) -> FlatChecklistItemRead:
+    return FlatChecklistItemRead(
+        id=row.id,
+        label=row.label,
+        checked=row.checked,
+        position=row.position,
+        building_id=row.building_id,
+        condominio_id=row.condominio_id,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 @router.get("/contractor-access/buildings")
 def contractor_buildings(
     condominio_id: str | None = None,
@@ -408,6 +659,65 @@ def contractor_buildings(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Condominio not found")
     rows = [resolve_public_flat(db, flat, condominio.id) for flat in PUBLIC_FLATS]
     return {"data": [ContractorBuildingRead(id=row.id, name=row.nome) for row in rows], "count": len(rows)}
+
+
+@router.get("/flat-checklists/{flat}", response_model=dict[str, list[FlatChecklistItemRead] | int | str])
+def get_flat_checklist(flat: str, db: Session = Depends(get_db), current_user: User = Depends(manager_user)) -> dict[str, list[FlatChecklistItemRead] | int | str]:
+    condominio_id = user_condominio_id(db, current_user)
+    building = resolve_public_flat(db, flat, condominio_id)
+    rows = list(
+        db.scalars(
+            select(FlatChecklistItem)
+            .where(FlatChecklistItem.condominio_id == condominio_id, FlatChecklistItem.building_id == building.id)
+            .order_by(FlatChecklistItem.position.asc(), FlatChecklistItem.created_at.asc())
+        )
+    )
+    return {"flat": flat, "building_id": building.id, "data": [checklist_read(row) for row in rows], "count": len(rows)}
+
+
+@router.put("/flat-checklists/{flat}", response_model=dict[str, list[FlatChecklistItemRead] | int | str])
+def save_flat_checklist(flat: str, payload: FlatChecklistWrite, db: Session = Depends(get_db), current_user: User = Depends(manager_user)) -> dict[str, list[FlatChecklistItemRead] | int | str]:
+    condominio_id = user_condominio_id(db, current_user)
+    building = resolve_public_flat(db, flat, condominio_id)
+    existing = list(
+        db.scalars(
+            select(FlatChecklistItem).where(
+                FlatChecklistItem.condominio_id == condominio_id,
+                FlatChecklistItem.building_id == building.id,
+            )
+        )
+    )
+    existing_ids = [row.id for row in existing]
+    if existing_ids:
+        db.query(CleanerCheckoutChecklistItem).filter(
+            CleanerCheckoutChecklistItem.checklist_item_id.in_(existing_ids)
+        ).update({"checklist_item_id": None}, synchronize_session=False)
+    for row in existing:
+        db.delete(row)
+    db.flush()
+
+    for index, item in enumerate(payload.items):
+        label = item.label.strip()
+        if not label:
+            continue
+        row = FlatChecklistItem(
+            building_id=building.id,
+            condominio_id=condominio_id,
+            label=label,
+            checked=item.checked,
+            position=index,
+        )
+        db.add(row)
+
+    db.commit()
+    rows = list(
+        db.scalars(
+            select(FlatChecklistItem)
+            .where(FlatChecklistItem.condominio_id == condominio_id, FlatChecklistItem.building_id == building.id)
+            .order_by(FlatChecklistItem.position.asc(), FlatChecklistItem.created_at.asc())
+        )
+    )
+    return {"flat": flat, "building_id": building.id, "data": [checklist_read(row) for row in rows], "count": len(rows)}
 
 
 @router.get("/contractor-access/open")
@@ -464,7 +774,10 @@ def contractor_check_out(payload: ContractorCheckOut, db: Session = Depends(get_
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contractor visit not found")
     if row.out_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contractor already checked out")
-    row.out_at = now_utc()
+    out_at = payload.out_at.astimezone(UTC) if payload.out_at else now_utc()
+    if out_at <= row.in_at:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="out_at must be after in_at")
+    row.out_at = out_at
     db.add(row)
     db.commit()
     db.refresh(row)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Upload, X } from "lucide-react";
+import { Download, Plus, Trash2, Upload, X } from "lucide-react";
 
 import { cashFlowService } from "../services/cashflow";
 
@@ -9,6 +9,13 @@ type InvoiceModalProps = {
   defaultDescription: string;
   onClose: () => void;
   onCreated?: (message: string) => void;
+};
+
+type InvoiceItem = {
+  id: string;
+  date: string;
+  description: string;
+  value: string;
 };
 
 function toDateInputValue(date: Date) {
@@ -70,12 +77,20 @@ function getMediaKind(file: File) {
   return "file" as const;
 }
 
+function newInvoiceItem(date = toDateInputValue(new Date())): InvoiceItem {
+  return {
+    id: `item-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    date,
+    description: "",
+    value: "",
+  };
+}
+
 export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, onCreated }: InvoiceModalProps) {
   const [invoiceDate, setInvoiceDate] = useState(() => toDateInputValue(new Date()));
+  const [to, setTo] = useState("");
   const [flat, setFlat] = useState("");
-  const [description, setDescription] = useState(defaultDescription);
-  const [hours, setHours] = useState("");
-  const [rate, setRate] = useState("");
+  const [items, setItems] = useState<InvoiceItem[]>(() => [newInvoiceItem()]);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
   const [mediaPreviewKind, setMediaPreviewKind] = useState<"image" | "pdf" | "file">("file");
@@ -103,10 +118,9 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     window.addEventListener("keydown", handleKeyDown);
 
     setInvoiceDate(toDateInputValue(new Date()));
+    setTo("");
     setFlat("");
-    setDescription(defaultDescription);
-    setHours("");
-    setRate("");
+    setItems([newInvoiceItem()]);
     setMediaFile(null);
     setMediaPreviewKind("file");
     setInvoiceNumber("Inv-0001");
@@ -131,18 +145,25 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     };
   }, [defaultDescription, onClose, open]);
 
-  const hoursValue = Number(hours || 0);
-  const rateValue = Number(rate || 0);
-  const totalValue = hoursValue * rateValue;
+  const totalValue = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
 
   const previewHtml = useMemo(() => {
     const issuedDate = formatDisplayDate(invoiceDate || toDateInputValue(new Date()));
-    const flatLabel = formatFlatLabel(flat);
-    const itemDescription = description.trim() || defaultDescription;
+    const toLabel = to.trim() || formatFlatLabel(flat);
     const total = formatCurrency(totalValue);
-    const price = formatCurrency(rateValue);
-    const quantity = hoursValue.toFixed(2);
-    const issuer = sourceLabel;
+    const invoiceItems = items.map((item, index) => ({
+      itemNumber: index + 1,
+      date: formatDisplayDate(item.date || invoiceDate || toDateInputValue(new Date())),
+      description: item.description.trim(),
+      total: formatCurrency(Number(item.value || 0)),
+    }));
+    const itemRows = invoiceItems.map((item) => `
+        <tr>
+          <td class="num">${item.itemNumber}</td>
+          <td>${escapeHtml(item.date)}</td>
+          <td>${escapeHtml(item.description)}</td>
+          <td class="num">${escapeHtml(item.total)}</td>
+        </tr>`).join("");
     const mediaMarkup =
       mediaPreviewUrl && mediaPreviewKind === "image"
         ? `<img src="${escapeHtml(mediaPreviewUrl)}" alt="Invoice media" />`
@@ -217,8 +238,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
       line-height: 1.45;
     }
     .to strong {
-      display: block;
-      margin-bottom: 6px;
+      font-weight: 700;
     }
     .card {
       border-radius: 18px;
@@ -383,10 +403,8 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
 
     <div class="hero">
       <div class="to">
-        <strong>TO:</strong>
-        ${escapeHtml(flatLabel)}<br />
-        Service invoice<br />
-        ${escapeHtml(sourceLabel)}
+        <strong>TO:</strong> ${escapeHtml(toLabel)}<br />
+        ${escapeHtml(formatFlatLabel(flat))}
       </div>
 
       <div class="card">
@@ -402,22 +420,13 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
           <th>Item</th>
           <th>Date</th>
           <th>Description</th>
-          <th class="num">Quantity</th>
-          <th class="num">Price £</th>
           <th class="num">Total £</th>
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td class="num">1</td>
-          <td>${escapeHtml(issuedDate)}</td>
-          <td>${escapeHtml(itemDescription)}</td>
-          <td class="num">${escapeHtml(quantity)}</td>
-          <td class="num">${escapeHtml(price)}</td>
-          <td class="num">${escapeHtml(total)}</td>
-        </tr>
+        ${itemRows}
         <tr class="due">
-          <td colspan="4" style="border: 0; background: white"></td>
+          <td colspan="2" style="border: 0; background: white"></td>
           <td>Total Due:</td>
           <td class="num">${escapeHtml(total)}</td>
         </tr>
@@ -427,17 +436,20 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
   </div>
 </body>
 </html>`;
-  }, [defaultDescription, flat, hoursValue, invoiceDate, invoiceNumber, mediaFile?.name, mediaPreviewKind, mediaPreviewUrl, rateValue, sourceLabel, totalValue]);
+  }, [flat, invoiceDate, invoiceNumber, items, mediaFile?.name, mediaPreviewKind, mediaPreviewUrl, to, totalValue]);
 
   async function handleDownload() {
     const { jsPDF } = await import("jspdf");
 
     const issuedDate = formatDisplayDate(invoiceDate || toDateInputValue(new Date()));
-    const flatLabel = formatFlatLabel(flat);
-    const itemDescription = description.trim() || defaultDescription;
+    const toLabel = to.trim() || formatFlatLabel(flat);
     const total = formatCurrency(totalValue);
-    const price = formatCurrency(rateValue);
-    const quantity = hoursValue.toFixed(2);
+    const invoiceItems = items.map((item, index) => ({
+      itemNumber: String(index + 1),
+      date: formatDisplayDate(item.date || invoiceDate || toDateInputValue(new Date())),
+      description: item.description.trim(),
+      total: formatCurrency(Number(item.value || 0)),
+    }));
 
     const pdf = new jsPDF({ unit: "pt", format: "a4" });
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -457,10 +469,9 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(12);
     pdf.text("TO:", left, y);
+    pdf.text(toLabel, left + 24, y);
     pdf.setFont("helvetica", "normal");
-    pdf.text(flatLabel, left, y + 18);
-    pdf.text("Service invoice", left, y + 36);
-    pdf.text(sourceLabel, left, y + 54);
+    pdf.text(formatFlatLabel(flat), left, y + 18);
 
     const mediaBoxX = right - 260;
     const mediaBoxY = y - 10;
@@ -498,15 +509,15 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
       pdf.text("Attach image or PDF", mediaBoxX + 12, mediaBoxY + 42);
     }
 
-    const toBlockBottomY = y + 54;
+    const toBlockBottomY = y + 18;
     const mediaBlockBottomY = mediaBoxY + mediaBoxHeight;
     const contentBottomY = Math.max(toBlockBottomY, mediaBlockBottomY);
 
     y = contentBottomY + 22;
     const tableLeft = left;
     const tableWidth = right - left;
-    const headers = ["Item", "Date", "Description", "Quantity", "Price £", "Total £"];
-    const widths = [50, 90, 190, 90, 90, 90];
+    const headers = ["Item", "Date", "Description", "Total £"];
+    const widths = [50, 100, 320, 130];
     const rowHeight = 28;
 
     pdf.setFillColor(5, 5, 5);
@@ -517,7 +528,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
 
     let x = tableLeft;
     headers.forEach((header, index) => {
-      const alignRight = index >= 3;
+      const alignRight = index === 3;
       pdf.text(header, alignRight ? x + widths[index] - 8 : x + 8, y + 18, { align: alignRight ? "right" : "left" });
       x += widths[index];
     });
@@ -526,21 +537,23 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     pdf.setTextColor(0, 0, 0);
     pdf.setFont("helvetica", "normal");
     pdf.setDrawColor(30, 30, 30);
-    pdf.rect(tableLeft, y, tableWidth, rowHeight);
 
-    x = tableLeft;
-    const row = ["1", issuedDate, itemDescription, quantity, price, total];
-    row.forEach((value, index) => {
-      pdf.line(x, y, x, y + rowHeight);
-      const alignRight = index >= 3 || index === 0;
-      pdf.text(String(value), alignRight ? x + widths[index] - 8 : x + 8, y + 18, { align: alignRight ? "right" : "left" });
-      x += widths[index];
+    invoiceItems.forEach((item) => {
+      pdf.rect(tableLeft, y, tableWidth, rowHeight);
+      x = tableLeft;
+      const row = [item.itemNumber, item.date, item.description, item.total];
+      row.forEach((value, index) => {
+        pdf.line(x, y, x, y + rowHeight);
+        const alignRight = index === 3 || index === 0;
+        const text = index === 2 ? pdf.splitTextToSize(String(value), widths[index] - 16)[0] ?? "" : String(value);
+        pdf.text(text, alignRight ? x + widths[index] - 8 : x + 8, y + 18, { align: alignRight ? "right" : "left" });
+        x += widths[index];
+      });
+      pdf.line(tableLeft + tableWidth, y, tableLeft + tableWidth, y + rowHeight);
+      y += rowHeight;
     });
-    pdf.line(tableLeft + tableWidth, y, tableLeft + tableWidth, y + rowHeight);
-
-    y += rowHeight;
-    const dueLabelWidth = widths[4];
-    const dueValueWidth = widths[5];
+    const dueLabelWidth = 90;
+    const dueValueWidth = widths[3];
     const dueX = tableLeft + tableWidth - dueLabelWidth - dueValueWidth;
 
     pdf.setFillColor(255, 247, 0);
@@ -558,12 +571,17 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
   async function handleLaunchToCashflow() {
     setError(null);
 
-    if (!hours.trim() || Number(hours) <= 0) {
-      setError("Enter a valid quantity of hours.");
+    const normalizedItems = items.map((item) => ({
+      ...item,
+      description: item.description.trim(),
+      valueNumber: Number(item.value || 0),
+    }));
+    if (normalizedItems.some((item) => !item.description)) {
+      setError("Enter a description for every invoice item.");
       return;
     }
-    if (!rate.trim() || Number(rate) <= 0) {
-      setError("Enter a valid hourly value.");
+    if (normalizedItems.length === 0 || totalValue <= 0 || normalizedItems.some((item) => item.valueNumber <= 0)) {
+      setError("Enter a valid invoice value.");
       return;
     }
     if (!mediaFile) {
@@ -579,7 +597,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
         invoice: "Yes",
         date: invoiceDate,
         value: cashflowValue,
-        description: description.trim() || defaultDescription,
+        description: normalizedItems.map((item) => item.description).join("; "),
         flat: flat.trim() || undefined,
         invoiceMedia: mediaFile
       });
@@ -595,12 +613,24 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     }
   }
 
+  function addItem() {
+    setItems((current) => [...current, newInvoiceItem(invoiceDate || toDateInputValue(new Date()))]);
+  }
+
+  function updateItem(id: string, patch: Partial<InvoiceItem>) {
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  function removeItem(id: string) {
+    setItems((current) => (current.length > 1 ? current.filter((item) => item.id !== id) : current));
+  }
+
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
       <article className="max-h-[92vh] w-full max-w-7xl overflow-hidden rounded-3xl border border-oak-border bg-white shadow-oakLg">
-        <header className="flex items-center justify-between gap-4 border-b border-oak-border px-5 py-4 sm:px-6">
+        <header className="flex items-center justify-between gap-4 border-b border-oak-border px-5 py-3 sm:px-6">
           <div>
             <p className="oak-label">Invoice</p>
             <h2 className="text-xl font-extrabold text-oak-coffee">{sourceLabel}</h2>
@@ -610,39 +640,73 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
           </button>
         </header>
 
-        <div className="grid gap-0 xl:grid-cols-[420px_minmax(0,1fr)]">
-          <form className="grid gap-4 border-b border-oak-border p-5 xl:border-b-0 xl:border-r xl:p-6" onSubmit={(event) => event.preventDefault()}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 sm:col-span-2">
+        <div className="grid max-h-[calc(92vh-73px)] min-h-0 gap-0 xl:grid-cols-[390px_minmax(0,1fr)]">
+          <form className="grid min-h-0 content-start gap-3 overflow-y-auto border-b border-oak-border p-4 xl:border-b-0 xl:border-r xl:p-4" onSubmit={(event) => event.preventDefault()}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1.5 sm:col-span-2">
                 <span className="oak-label">Invoice date</span>
-                <input className="oak-input" type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} />
+                <input className="oak-input !min-h-10 !px-3 !py-2" type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} />
               </label>
-              <label className="grid gap-2 sm:col-span-2">
+              <label className="grid gap-1.5 sm:col-span-2">
+                <span className="oak-label">TO</span>
+                <input className="oak-input !min-h-10 !px-3 !py-2" value={to} onChange={(event) => setTo(event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 sm:col-span-2">
                 <span className="oak-label">Flat / client</span>
-                <select className="oak-input" value={flat} onChange={(event) => setFlat(event.target.value)}>
+                <select className="oak-input !min-h-10 !px-3 !py-2" value={flat} onChange={(event) => setFlat(event.target.value)}>
                   <option value="">Select a flat</option>
                   <option value="50">Flat 50</option>
                   <option value="51">Flat 51</option>
                   <option value="52">Flat 52</option>
                 </select>
               </label>
-              <label className="grid gap-2 sm:col-span-2">
-                <span className="oak-label">Description</span>
-                <input className="oak-input" value={description} onChange={(event) => setDescription(event.target.value)} placeholder={defaultDescription} />
-              </label>
-              <label className="grid gap-2">
-                <span className="oak-label">Hours</span>
-                <input className="oak-input" min="0" step="0.25" type="number" value={hours} onChange={(event) => setHours(event.target.value)} />
-              </label>
-              <label className="grid gap-2">
-                <span className="oak-label">Value/hour</span>
-                <input className="oak-input" min="0" step="0.01" type="number" value={rate} onChange={(event) => setRate(event.target.value)} />
-              </label>
             </div>
 
-            <label className="grid gap-2">
+            <div className="grid gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="oak-label">Invoice items</p>
+                <button className="oak-button-secondary !min-h-9 !px-3 !py-2" type="button" onClick={addItem}>
+                  <Plus size={16} />
+                  Add item
+                </button>
+              </div>
+              <div className="grid max-h-56 gap-2 overflow-y-auto pr-1">
+                {items.map((item, index) => (
+                  <div className="grid gap-2 rounded-xl border border-oak-border bg-white p-2.5" key={item.id}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-extrabold text-oak-coffee">Item {index + 1}</p>
+                      <button
+                        className="oak-button-secondary !min-h-8 !px-2"
+                        disabled={items.length === 1}
+                        type="button"
+                        onClick={() => removeItem(item.id)}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                    <label className="grid gap-1.5">
+                      <span className="oak-label">Date</span>
+                      <input className="oak-input !min-h-10 !px-3 !py-2" type="date" value={item.date} onChange={(event) => updateItem(item.id, { date: event.target.value })} />
+                    </label>
+                    <label className="grid gap-1.5">
+                      <span className="oak-label">Description</span>
+                      <input className="oak-input !min-h-10 !px-3 !py-2" value={item.description} onChange={(event) => updateItem(item.id, { description: event.target.value })} />
+                    </label>
+                    <label className="grid gap-1.5">
+                      <span className="oak-label">Total</span>
+                      <input className="oak-input !min-h-10 !px-3 !py-2" min="0" step="0.01" type="number" value={item.value} onChange={(event) => updateItem(item.id, { value: event.target.value })} />
+                    </label>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-xl bg-oak-panel p-2.5 text-sm font-extrabold text-oak-coffee">
+                Invoice total: {formatCurrency(totalValue)}
+              </div>
+            </div>
+
+            <label className="grid gap-1.5">
               <span className="oak-label">Media</span>
-              <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-oak-border bg-oak-panel/50 px-4 py-4 text-sm font-semibold text-oak-coffee">
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-oak-border bg-oak-panel/50 px-3 py-3 text-sm font-semibold text-oak-coffee">
                 <Upload size={18} />
                 <span>{mediaFile ? mediaFile.name : "Choose image or PDF"}</span>
                 <input
@@ -672,12 +736,12 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
             </label>
 
             {mediaFile ? (
-              <div className="rounded-2xl border border-oak-border bg-white p-3">
-                <p className="oak-label mb-2">Media preview</p>
+              <div className="rounded-xl border border-oak-border bg-white p-2.5">
+                <p className="oak-label mb-1.5">Media preview</p>
                 {mediaPreviewKind === "image" && mediaPreviewUrl ? (
-                  <img alt="Invoice media preview" className="max-h-52 w-full rounded-xl object-contain" src={mediaPreviewUrl} />
+                  <img alt="Invoice media preview" className="max-h-32 w-full rounded-xl object-contain" src={mediaPreviewUrl} />
                 ) : mediaPreviewKind === "pdf" && mediaPreviewUrl ? (
-                  <object aria-label="Invoice media PDF preview" className="h-52 w-full rounded-xl border border-oak-border" data={mediaPreviewUrl} type="application/pdf">
+                  <object aria-label="Invoice media PDF preview" className="h-32 w-full rounded-xl border border-oak-border" data={mediaPreviewUrl} type="application/pdf">
                     <div className="rounded-xl bg-oak-panel p-4 text-sm font-semibold text-oak-coffee">{mediaFile.name}</div>
                   </object>
                 ) : (
@@ -688,7 +752,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
               </div>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sticky bottom-0 -mx-4 grid gap-3 border-t border-oak-border bg-white/95 px-4 py-3 backdrop-blur sm:grid-cols-2">
               <button className="oak-button-secondary !min-h-9 !py-2" type="button" onClick={() => void handleDownload()}>
                 <Download size={16} />
                 Download
@@ -701,10 +765,10 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
             {error ? <div className="rounded-xl border border-oak-danger/30 bg-oak-dangerBg p-3 text-sm font-bold text-oak-danger">{error}</div> : null}
           </form>
 
-          <div className="grid gap-0 bg-[#f7f5f1] p-4 sm:p-6">
+          <div className="grid min-h-0 gap-0 bg-[#f7f5f1] p-4 sm:p-5">
             <div className="overflow-hidden rounded-3xl border border-oak-border bg-white shadow-oak">
               <iframe
-                className="h-[72vh] w-full bg-white"
+                className="h-[calc(92vh-130px)] min-h-[520px] w-full bg-white"
                 sandbox="allow-same-origin"
                 srcDoc={previewHtml}
                 title="Invoice preview"

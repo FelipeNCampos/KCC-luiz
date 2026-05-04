@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -20,6 +20,7 @@ class Condominio(Base):
     buildings: Mapped[list["Building"]] = relationship("Building", back_populates="condominio")
     funcionarios: Mapped[list["Funcionario"]] = relationship("Funcionario", back_populates="condominio")
     contractor_visits: Mapped[list["ContractorVisit"]] = relationship("ContractorVisit", back_populates="condominio")
+    stock_requests: Mapped[list["StockRequest"]] = relationship("StockRequest", back_populates="condominio")
 
 
 class Building(Base):
@@ -40,7 +41,7 @@ class Funcionario(Base):
     status: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     nome: Mapped[str] = mapped_column(String(160), nullable=False)
-    mobile: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mobile: Mapped[str | None] = mapped_column(String(80), nullable=True)
     cargo: Mapped[int] = mapped_column(Integer, nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
@@ -61,6 +62,11 @@ class Acess(Base):
 
     building: Mapped["Building"] = relationship("Building", back_populates="acessos")
     funcionario: Mapped["Funcionario"] = relationship("Funcionario", back_populates="acessos")
+    checkout_checklist_items: Mapped[list["CleanerCheckoutChecklistItem"]] = relationship(
+        "CleanerCheckoutChecklistItem",
+        back_populates="access",
+        cascade="all, delete-orphan",
+    )
 
 
 class ContractorVisit(Base):
@@ -118,3 +124,65 @@ class ContractorHistory(Base):
 
     visit: Mapped["ContractorVisit"] = relationship("ContractorVisit", back_populates="histories")
     category: Mapped["ContractorHistoryCategory"] = relationship("ContractorHistoryCategory")
+
+
+class FlatChecklistItem(Base):
+    __tablename__ = "flat_checklist_items"
+    __table_args__ = (UniqueConstraint("building_id", "position", name="uq_flat_checklist_items_building_position"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    checked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    building_id: Mapped[str] = mapped_column(String(36), ForeignKey("buildings.id"), nullable=False, index=True)
+    condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
+
+
+class FlatInstruction(Base):
+    __tablename__ = "flat_instructions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    video_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    video_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    video_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    building_id: Mapped[str] = mapped_column(String(36), ForeignKey("buildings.id"), nullable=False, index=True)
+    condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
+
+
+class CleanerCheckoutChecklistItem(Base):
+    __tablename__ = "cleaner_checkout_checklist_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    checked: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    access_id: Mapped[str] = mapped_column(String(36), ForeignKey("acess.id"), nullable=False, index=True)
+    checklist_item_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("flat_checklist_items.id"), nullable=True, index=True)
+    building_id: Mapped[str] = mapped_column(String(36), ForeignKey("buildings.id"), nullable=False, index=True)
+    condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
+
+    access: Mapped["Acess"] = relationship("Acess", back_populates="checkout_checklist_items")
+
+
+class StockRequest(Base):
+    __tablename__ = "stock_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
+    product_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    photo_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    photo_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
+
+    condominio: Mapped["Condominio"] = relationship("Condominio", back_populates="stock_requests")
