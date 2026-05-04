@@ -519,7 +519,7 @@ export function CashFlowPage() {
   return (
     <DashboardShell
       title="Cashflow"
-      subtitle="Lancamentos e saldo mensal"
+      subtitle=""
       rightSlot={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
           <label className="grid gap-2" onClick={openMonthPicker}>
