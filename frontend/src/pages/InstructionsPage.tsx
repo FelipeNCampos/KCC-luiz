@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { AxiosError } from "axios";
+import axios, { AxiosError } from "axios";
 import { Film, Plus, Save, Trash2, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
@@ -46,6 +46,27 @@ function inferVideoMime(file: File) {
 
 function normalizeVideoDataUrl(dataUrl: string, mimeType: string) {
   return dataUrl.replace(/^data:[^;]*;base64,/, `data:${mimeType};base64,`);
+}
+
+function getRequestErrorMessage(error: unknown) {
+  if (!axios.isAxiosError(error)) return "Unable to save instructions.";
+
+  const requestError = error as AxiosError<{ detail?: unknown; message?: string }>;
+  const detail = requestError.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((item) => (typeof item === "string" ? item : item?.msg))
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (requestError.response?.data?.message) return requestError.response.data.message;
+  if (requestError.response?.status === 413) return "Instruction video is too large.";
+  if (requestError.response?.status === 401) return "Your session expired. Please log in again.";
+  if (requestError.response?.status === 403) return "You do not have permission to save instructions.";
+  if (requestError.response?.status) return `Unable to save instructions. Server returned ${requestError.response.status}.`;
+  if (requestError.request) return "Unable to save instructions. The server did not respond.";
+  return requestError.message || "Unable to save instructions.";
 }
 
 export function InstructionsPage() {
@@ -121,8 +142,7 @@ export function InstructionsPage() {
       })));
       setFeedback({ type: "success", message: "Instructions saved." });
     } catch (error) {
-      const requestError = error as AxiosError<{ detail?: string }>;
-      setFeedback({ type: "error", message: requestError.response?.data?.detail ?? "Unable to save instructions." });
+      setFeedback({ type: "error", message: getRequestErrorMessage(error) });
     } finally {
       setSaving(false);
     }
