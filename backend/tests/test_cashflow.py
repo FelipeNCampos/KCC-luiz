@@ -489,11 +489,13 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
     first_page_text = reader.pages[0].extract_text()
     assert "Period: 2026-04_to_2026-05" in first_page_text
     assert "Opening Balance" in first_page_text
-    assert "EUR 300.00" in first_page_text
+    assert "£ 300.00" in first_page_text
     assert "Period Balance" in first_page_text
-    assert "EUR 200.00" in first_page_text
+    assert "£ 200.00" in first_page_text
     assert "Closing Balance" in first_page_text
-    assert "EUR 500.00" in first_page_text
+    assert "£ 500.00" in first_page_text
+    assert "12-04-2026" in first_page_text
+    assert "02-05-2026" in first_page_text
     assert "Monthly fee" in first_page_text
     assert "May fee" in first_page_text
     assert "Invoices" in first_page_text

@@ -52,9 +52,14 @@ function toDateInputValue(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function formatDate(value: string) {
+  const [year, month, day] = value.split("-");
+  return day && month && year ? `${day}-${month}-${year}` : value;
+}
+
 function formatCurrency(value: string | number) {
   const parsed = typeof value === "number" ? value : Number(value);
-  return new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(parsed);
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(parsed);
 }
 
 function normalizeFlatValue(value: string | null | undefined) {
@@ -647,7 +652,7 @@ export function CashFlowPage() {
                         </button>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-black/65">{row.record_date}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
                     <td
                       className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
                     >

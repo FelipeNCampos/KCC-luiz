@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { AxiosError } from "axios";
 import { Film, Plus, Save, Trash2, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
@@ -7,6 +8,13 @@ import { FlatInstruction, instructionsService } from "../services/instructions";
 type InstructionDraft = Pick<FlatInstruction, "id" | "title" | "video_url" | "video_name" | "video_data" | "description" | "position">;
 
 const FLATS = ["50", "51", "52"];
+const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
+const VIDEO_MIME_BY_EXTENSION: Record<string, string> = {
+  mov: "video/quicktime",
+  mp4: "video/mp4",
+  m4v: "video/x-m4v",
+  webm: "video/webm",
+};
 
 function emptyInstruction(position: number): InstructionDraft {
   return {
@@ -27,6 +35,17 @@ function fileToDataUrl(file: File) {
     reader.onerror = () => reject(new Error("Unable to read selected video."));
     reader.readAsDataURL(file);
   });
+}
+
+function inferVideoMime(file: File) {
+  if (file.type.startsWith("video/")) return file.type;
+
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return VIDEO_MIME_BY_EXTENSION[extension] ?? null;
+}
+
+function normalizeVideoDataUrl(dataUrl: string, mimeType: string) {
+  return dataUrl.replace(/^data:[^;]*;base64,/, `data:${mimeType};base64,`);
 }
 
 export function InstructionsPage() {
@@ -101,8 +120,9 @@ export function InstructionsPage() {
         position: item.position,
       })));
       setFeedback({ type: "success", message: "Instructions saved." });
-    } catch {
-      setFeedback({ type: "error", message: "Unable to save instructions." });
+    } catch (error) {
+      const requestError = error as AxiosError<{ detail?: string }>;
+      setFeedback({ type: "error", message: requestError.response?.data?.detail ?? "Unable to save instructions." });
     } finally {
       setSaving(false);
     }
@@ -110,13 +130,19 @@ export function InstructionsPage() {
 
   async function selectVideo(index: number, file: File | null) {
     if (!file) return;
-    if (!file.type.startsWith("video/")) {
+    const videoMime = inferVideoMime(file);
+    if (!videoMime) {
       setFeedback({ type: "error", message: "Select a video file." });
+      return;
+    }
+    if (file.size > MAX_VIDEO_BYTES) {
+      setFeedback({ type: "error", message: "Instruction video is too large." });
       return;
     }
     try {
       const dataUrl = await fileToDataUrl(file);
-      updateItem(index, { video_name: file.name, video_data: dataUrl, video_url: "" });
+      updateItem(index, { video_name: file.name, video_data: normalizeVideoDataUrl(dataUrl, videoMime), video_url: "" });
+      setFeedback({ type: "success", message: "Video selected. Save instructions to publish it." });
     } catch {
       setFeedback({ type: "error", message: "Unable to read selected video." });
     }

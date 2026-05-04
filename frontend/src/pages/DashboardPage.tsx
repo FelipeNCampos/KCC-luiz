@@ -21,7 +21,7 @@ function toMonthInputValue(date: Date) {
 
 function formatCurrency(value: string | number) {
   const parsed = typeof value === "number" ? value : Number(value);
-  return new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(parsed);
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(parsed);
 }
 
 function formatDate(value: string) {

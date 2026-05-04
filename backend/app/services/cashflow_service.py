@@ -336,7 +336,7 @@ class CashFlowService:
                 [
                     f"#{item.payment_number}",
                     "Yes" if item.has_invoice else "No",
-                    item.record_date.isoformat(),
+                    CashFlowService._format_date(item.record_date),
                     CashFlowService._format_money(item.amount),
                     item.description or "",
                     item.flat or "",
@@ -362,7 +362,7 @@ class CashFlowService:
                 [
                     [
                         f"#{item.payment_number}",
-                        item.record_date.isoformat(),
+                        CashFlowService._format_date(item.record_date),
                         item.invoice_media_name or "invoice",
                         item.description or "",
                         item.flat or "",
@@ -495,7 +495,11 @@ class CashFlowService:
 
     @staticmethod
     def _format_money(value: Decimal) -> str:
-        return f"EUR {value:,.2f}"
+        return f"£ {value:,.2f}"
+
+    @staticmethod
+    def _format_date(value: date) -> str:
+        return value.strftime("%d-%m-%Y")
 
     @staticmethod
     def _parse_month(month: str | None) -> tuple[str, date, date]:
