@@ -14,7 +14,7 @@ from app.schemas.instructions import FlatInstructionRead, FlatInstructionSave
 router = APIRouter()
 PUBLIC_FLATS = ("50", "51", "52")
 VIDEO_DATA_URL_RE = re.compile(r"^data:(video/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$")
-MAX_VIDEO_BYTES = 80 * 1024 * 1024
+MAX_VIDEO_BYTES = 250 * 1024 * 1024
 
 
 def manager_user(current_user: User = Depends(get_current_user)) -> User:

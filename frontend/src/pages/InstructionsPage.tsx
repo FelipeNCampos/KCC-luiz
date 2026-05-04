@@ -8,7 +8,7 @@ import { FlatInstruction, instructionsService } from "../services/instructions";
 type InstructionDraft = Pick<FlatInstruction, "id" | "title" | "video_url" | "video_name" | "video_data" | "description" | "position">;
 
 const FLATS = ["50", "51", "52"];
-const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 250 * 1024 * 1024;
 const VIDEO_MIME_BY_EXTENSION: Record<string, string> = {
   mov: "video/quicktime",
   mp4: "video/mp4",
