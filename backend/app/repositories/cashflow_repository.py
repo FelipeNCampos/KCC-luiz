@@ -35,23 +35,45 @@ class CashFlowRepository:
         self.db.delete(record)
         self.db.commit()
 
-    def list_month_records(self, month_start: date, month_end: date) -> list[CashFlowRecord]:
+    def list_month_records(
+        self,
+        month_start: date,
+        month_end: date,
+        cashflow_scope: str,
+    ) -> list[CashFlowRecord]:
         statement: Select[tuple[CashFlowRecord]] = (
             select(CashFlowRecord)
-            .where(CashFlowRecord.record_date >= month_start, CashFlowRecord.record_date < month_end)
+            .where(
+                CashFlowRecord.record_date >= month_start,
+                CashFlowRecord.record_date < month_end,
+            )
+            .where(CashFlowRecord.cashflow_scope == cashflow_scope)
             .order_by(CashFlowRecord.record_date.asc(), CashFlowRecord.id.asc())
         )
         return list(self.db.scalars(statement).all())
 
-    def list_range_records(self, start_date: date, end_date: date) -> list[CashFlowRecord]:
+    def list_range_records(
+        self,
+        start_date: date,
+        end_date: date,
+        cashflow_scope: str,
+    ) -> list[CashFlowRecord]:
         statement: Select[tuple[CashFlowRecord]] = (
             select(CashFlowRecord)
-            .where(CashFlowRecord.record_date >= start_date, CashFlowRecord.record_date < end_date)
+            .where(
+                CashFlowRecord.record_date >= start_date,
+                CashFlowRecord.record_date < end_date,
+            )
+            .where(CashFlowRecord.cashflow_scope == cashflow_scope)
             .order_by(CashFlowRecord.record_date.asc(), CashFlowRecord.id.asc())
         )
         return list(self.db.scalars(statement).all())
 
-    def get_balance_before(self, month_start: date) -> Decimal:
-        statement = select(func.coalesce(func.sum(CashFlowRecord.amount), 0)).where(CashFlowRecord.record_date < month_start)
+    def get_balance_before(self, month_start: date, cashflow_scope: str) -> Decimal:
+        statement = (
+            select(func.coalesce(func.sum(CashFlowRecord.amount), 0))
+            .where(CashFlowRecord.record_date < month_start)
+            .where(CashFlowRecord.cashflow_scope == cashflow_scope)
+        )
         total = self.db.scalar(statement)
         return Decimal(total or 0)

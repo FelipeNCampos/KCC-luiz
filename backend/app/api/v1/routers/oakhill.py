@@ -599,11 +599,16 @@ def door_code_for(building_name: str) -> str | None:
     return lookup.get(normalize_name(building_name))
 
 
+def contractor_flat(building_name: str) -> str:
+    return building_name.strip().removeprefix("Flat ").strip()
+
+
 def public_visit(row: ContractorVisit) -> ContractorPublicVisit:
     return ContractorPublicVisit(
         id=row.id,
         name=row.name,
         company=row.company,
+        flat=contractor_flat(row.block),
         building_name=row.block,
         door_code=door_code_for(row.block),
         job_description=row.job_description,
@@ -619,6 +624,7 @@ def visit_read(row: ContractorVisit) -> ContractorVisitRead:
         id=row.id,
         name=row.name,
         company=row.company,
+        flat=contractor_flat(row.block),
         building_name=row.block,
         job_description=row.job_description,
         mobile=row.mobile,
@@ -736,6 +742,7 @@ def contractor_open(
             id=row.id,
             name=row.name,
             company=row.company,
+            flat=contractor_flat(row.block),
             building_name=row.block,
             job_description=row.job_description,
             mobile=row.mobile,
@@ -902,6 +909,7 @@ def history_read(row: ContractorHistory) -> ContractorHistoryRead:
         next_notification_sent_at=row.next_notification_sent_at,
         name=row.visit.name,
         company=row.visit.company,
+        flat=contractor_flat(row.visit.block),
         building_name=row.visit.block,
         job_description=row.visit.job_description,
         mobile=row.visit.mobile,

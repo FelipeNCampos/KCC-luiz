@@ -265,7 +265,7 @@ export function CaretakerPage() {
               <th className="p-3 whitespace-nowrap">Date</th>
               <th className="p-3 whitespace-nowrap">Name</th>
               <th className="p-3 whitespace-nowrap">Company</th>
-              <th className="p-3 whitespace-nowrap">Building</th>
+              <th className="p-3 whitespace-nowrap">Flat</th>
               <th className="p-3 whitespace-nowrap">Job</th>
               <th className="p-3 whitespace-nowrap">Time in</th>
               <th className="py-3 pl-3 pr-1 whitespace-nowrap">Time out</th>
@@ -278,7 +278,7 @@ export function CaretakerPage() {
                 <td className="p-3 whitespace-nowrap">{formatDate(record.in_at)}</td>
                 <td className="p-3 whitespace-nowrap">{record.name}</td>
                 <td className="p-3 whitespace-nowrap">{record.company}</td>
-                <td className="p-3 whitespace-nowrap">{record.building_name}</td>
+                <td className="p-3 whitespace-nowrap">Flat {record.flat}</td>
                 <td className="p-3 max-w-56 truncate">{record.job_description}</td>
                 <td className="p-3 whitespace-nowrap">{formatTime(record.in_at)}</td>
                 <td className="py-3 pl-3 pr-1 whitespace-nowrap">

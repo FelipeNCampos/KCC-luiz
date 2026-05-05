@@ -49,7 +49,7 @@ export function QrCodesPage() {
           Stock
         </button>
         <button className={tab === "instructions" ? "oak-button-primary" : "oak-button-secondary"} type="button" onClick={() => setTab("instructions")}>
-          Instruções
+          Guide Video
         </button>
       </div>
 
@@ -68,7 +68,7 @@ export function QrCodesPage() {
       {tab === "instructions" ? (
         <section className="grid gap-4 md:grid-cols-3">
           {instructionLinks.map((item) => (
-            <QrCard key={item.flat} title={`Instructions Flat ${item.flat}`} link={item.link} fileName={`qr-instructions-flat-${item.flat}.png`} />
+            <QrCard key={item.flat} title={`Guide Video Flat ${item.flat}`} link={item.link} fileName={`qr-instructions-flat-${item.flat}.png`} />
           ))}
         </section>
       ) : null}

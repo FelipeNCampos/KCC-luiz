@@ -49,7 +49,7 @@ function normalizeVideoDataUrl(dataUrl: string, mimeType: string) {
 }
 
 function getRequestErrorMessage(error: unknown) {
-  if (!axios.isAxiosError(error)) return "Unable to save instructions.";
+  if (!axios.isAxiosError(error)) return "Unable to save guide videos.";
 
   const requestError = error as AxiosError<{ detail?: unknown; message?: string }>;
   const detail = requestError.response?.data?.detail;
@@ -61,12 +61,12 @@ function getRequestErrorMessage(error: unknown) {
       .join(" ");
   }
   if (requestError.response?.data?.message) return requestError.response.data.message;
-  if (requestError.response?.status === 413) return "Instruction video is too large.";
+  if (requestError.response?.status === 413) return "Guide video is too large.";
   if (requestError.response?.status === 401) return "Your session expired. Please log in again.";
-  if (requestError.response?.status === 403) return "You do not have permission to save instructions.";
-  if (requestError.response?.status) return `Unable to save instructions. Server returned ${requestError.response.status}.`;
-  if (requestError.request) return "Unable to save instructions. The server did not respond.";
-  return requestError.message || "Unable to save instructions.";
+  if (requestError.response?.status === 403) return "You do not have permission to save guide videos.";
+  if (requestError.response?.status) return `Unable to save guide videos. Server returned ${requestError.response.status}.`;
+  if (requestError.request) return "Unable to save guide videos. The server did not respond.";
+  return requestError.message || "Unable to save guide videos.";
 }
 
 export function InstructionsPage() {
@@ -92,7 +92,7 @@ export function InstructionsPage() {
       })));
     } catch {
       setItems([]);
-      setFeedback({ type: "error", message: "Unable to load instructions." });
+      setFeedback({ type: "error", message: "Unable to load guide videos." });
     } finally {
       setLoading(false);
     }
@@ -140,7 +140,7 @@ export function InstructionsPage() {
         description: item.description,
         position: item.position,
       })));
-      setFeedback({ type: "success", message: "Instructions saved." });
+      setFeedback({ type: "success", message: "Guide videos saved." });
     } catch (error) {
       setFeedback({ type: "error", message: getRequestErrorMessage(error) });
     } finally {
@@ -156,24 +156,24 @@ export function InstructionsPage() {
       return;
     }
     if (file.size > MAX_VIDEO_BYTES) {
-      setFeedback({ type: "error", message: "Instruction video is too large." });
+      setFeedback({ type: "error", message: "Guide video is too large." });
       return;
     }
     try {
       const dataUrl = await fileToDataUrl(file);
       updateItem(index, { video_name: file.name, video_data: normalizeVideoDataUrl(dataUrl, videoMime), video_url: "" });
-      setFeedback({ type: "success", message: "Video selected. Save instructions to publish it." });
+      setFeedback({ type: "success", message: "Video selected. Save guide videos to publish it." });
     } catch {
       setFeedback({ type: "error", message: "Unable to read selected video." });
     }
   }
 
   return (
-    <DashboardShell title="Instruções" subtitle="Flat instructions shown by QR code">
+    <DashboardShell title="Guide Video" subtitle="Guide videos shown by QR code">
       <section className="oak-card p-5">
         <div className="flex flex-col gap-4 border-b border-oak-border pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="oak-label">Instructions</p>
+            <p className="oak-label">Guide Video</p>
             <h2 className="mt-2 text-xl font-extrabold text-oak-coffee">Configure by flat</h2>
           </div>
           <label className="grid gap-2 sm:min-w-48">
@@ -193,12 +193,12 @@ export function InstructionsPage() {
         ) : null}
 
         <form className="mt-5 grid gap-4" onSubmit={(event) => void saveInstructions(event)}>
-          {loading ? <p className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/60">Loading instructions...</p> : null}
-          {!loading && items.length === 0 ? <p className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/60">No instructions for Flat {selectedFlat}.</p> : null}
+          {loading ? <p className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/60">Loading guide videos...</p> : null}
+          {!loading && items.length === 0 ? <p className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/60">No guide videos for Flat {selectedFlat}.</p> : null}
           {items.map((item, index) => (
             <article className="grid gap-3 rounded-xl border border-oak-border p-4" key={item.id}>
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-extrabold text-oak-coffee">Instruction {index + 1}</p>
+                <p className="text-sm font-extrabold text-oak-coffee">Guide Video {index + 1}</p>
                 <button className="oak-button-secondary !min-h-9 !px-3" disabled={saving} type="button" onClick={() => removeItem(index)}>
                   <Trash2 size={16} />
                   Remove
@@ -235,11 +235,11 @@ export function InstructionsPage() {
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
             <button className="oak-button-secondary" disabled={saving} type="button" onClick={addItem}>
               <Plus size={16} />
-              Add instruction
+              Add guide video
             </button>
             <button className="oak-button-primary" disabled={saving} type="submit">
               <Save size={16} />
-              {saving ? "Saving..." : "Save instructions"}
+              {saving ? "Saving..." : "Save guide videos"}
             </button>
           </div>
         </form>

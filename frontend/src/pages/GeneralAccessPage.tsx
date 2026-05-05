@@ -93,7 +93,7 @@ export function GeneralAccessPage() {
       id: item.id,
       mobile: item.mobile,
       label: `${item.mobile} - ${item.name}`,
-      detail: `${item.job_description} | IN: ${formatDateTime(item.in_at)}`,
+      detail: `Flat ${item.flat} | ${item.job_description} | IN: ${formatDateTime(item.in_at)}`,
     }));
   }, [cleanerOpen, contractorOpen, personType]);
 
@@ -118,7 +118,7 @@ export function GeneralAccessPage() {
         const response = await oakhillService.contractorCheckIn({
           name: form.name,
           company: "Contractor",
-          building_id: "50",
+          building_id: form.building_id,
           job_description: form.job_description,
           mobile: form.mobile,
         });
@@ -209,10 +209,21 @@ export function GeneralAccessPage() {
                 </label>
               ) : null}
               {personType === "contractor" ? (
-                <label className="grid gap-2">
-                  <span className="oak-label">Job description</span>
-                  <input className="oak-input" value={form.job_description} onChange={(event) => setForm((current) => ({ ...current, job_description: event.target.value }))} required />
-                </label>
+                <>
+                  <label className="grid gap-2">
+                    <span className="oak-label">Flat</span>
+                    <select className="oak-input" value={form.building_id} onChange={(event) => setForm((current) => ({ ...current, building_id: event.target.value }))} required>
+                      <option value="">Select flat</option>
+                      {FLATS.map((flat) => (
+                        <option key={flat} value={flat}>Flat {flat}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="oak-label">Job description</span>
+                    <input className="oak-input" value={form.job_description} onChange={(event) => setForm((current) => ({ ...current, job_description: event.target.value }))} required />
+                  </label>
+                </>
               ) : null}
             </div>
           ) : (

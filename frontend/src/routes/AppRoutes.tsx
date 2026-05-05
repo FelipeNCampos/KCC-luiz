@@ -76,6 +76,14 @@ export function AppRoutes() {
         }
       />
       <Route
+        path="/cash-flow-52"
+        element={
+          <AdminRoute>
+            <CashFlowPage title="Cashflow 52" scope="cashflow52" showFlat={false} />
+          </AdminRoute>
+        }
+      />
+      <Route
         path="/tasks"
         element={
           <TasksRoute>

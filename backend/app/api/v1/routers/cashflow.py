@@ -65,9 +65,10 @@ def list_cashflow_records(
     _: Annotated[User, Depends(require_roles("admin", "manager"))],
     month: Annotated[str | None, Query(description="Month in format YYYY-MM")] = None,
     search: Annotated[str | None, Query(description="Search by description or flat")] = None,
+    scope: Annotated[str | None, Query(description="Cashflow scope")] = None,
 ) -> CashFlowListResponse:
     service = CashFlowService(CashFlowRepository(db))
-    return service.list_month(month=month, search=search)
+    return service.list_month(month=month, search=search, scope=scope)
 
 
 @router.get("/next-payment-number", response_model=CashFlowNextPaymentNumberResponse)
@@ -88,6 +89,7 @@ async def create_cashflow_record(
     value: Annotated[Decimal, Form(alias="value")],
     description: Annotated[str | None, Form(alias="description")] = None,
     flat: Annotated[str | None, Form(alias="flat")] = None,
+    scope: Annotated[str | None, Form(alias="scope")] = None,
     invoice_media: Annotated[UploadFile | None, File(alias="invoice_media")] = None,
 ) -> CashFlowRow:
     has_invoice = _parse_invoice_flag(invoice)
@@ -118,6 +120,7 @@ async def create_cashflow_record(
         value=value,
         description=description,
         flat=flat,
+        scope=scope,
     )
 
     service = CashFlowService(CashFlowRepository(db))
@@ -197,6 +200,7 @@ def send_cashflow_report(
         recipient=payload.email,
         start_month=payload.start_month,
         end_month=payload.end_month,
+        scope=payload.scope,
         search=payload.search,
         include_invoice_table=payload.include_invoice_table,
         fallback_month=payload.month,
@@ -214,6 +218,7 @@ def preview_cashflow_report(
     period_label, report_data = service.build_range_report_pdf(
         start_month=payload.start_month,
         end_month=payload.end_month,
+        scope=payload.scope,
         search=payload.search,
         include_invoice_table=payload.include_invoice_table,
         fallback_month=payload.month,

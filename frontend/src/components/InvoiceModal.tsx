@@ -98,13 +98,6 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function syncNextInvoiceNumber() {
-    const nextPaymentNumber = await cashFlowService.getNextPaymentNumber();
-    const nextInvoiceNumber = formatInvoiceNumber(nextPaymentNumber);
-    setInvoiceNumber(nextInvoiceNumber);
-    return nextInvoiceNumber;
-  }
-
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -161,7 +154,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
         <tr>
           <td class="num">${item.itemNumber}</td>
           <td>${escapeHtml(item.date)}</td>
-          <td>${escapeHtml(item.description)}</td>
+          <td class="description-cell">${escapeHtml(item.description)}</td>
           <td class="num">${escapeHtml(item.total)}</td>
         </tr>`).join("");
     const mediaMarkup =
@@ -364,8 +357,14 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     table {
       width: 100%;
       border-collapse: collapse;
+      table-layout: fixed;
       margin-top: 14px;
       font-size: 14px;
+    }
+    th,
+    td {
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     thead th {
       background: #050505;
@@ -383,6 +382,9 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     th.num {
       text-align: right;
       white-space: nowrap;
+    }
+    .description-cell {
+      white-space: normal;
     }
     .due td {
       background: #fff700;
@@ -415,6 +417,12 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     </div>
 
     <table>
+      <colgroup>
+        <col style="width: 12%" />
+        <col style="width: 18%" />
+        <col style="width: 50%" />
+        <col style="width: 20%" />
+      </colgroup>
       <thead>
         <tr>
           <th>Item</th>
@@ -517,8 +525,10 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     const tableLeft = left;
     const tableWidth = right - left;
     const headers = ["Item", "Date", "Description", "Total £"];
-    const widths = [50, 100, 320, 130];
+    const widths = [52, 92, tableWidth - 52 - 92 - 110, 110];
     const rowHeight = 28;
+    const rowPaddingTop = 18;
+    const descriptionLineHeight = 14;
 
     pdf.setFillColor(5, 5, 5);
     pdf.rect(tableLeft, y, tableWidth, rowHeight, "F");
@@ -539,18 +549,44 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     pdf.setDrawColor(30, 30, 30);
 
     invoiceItems.forEach((item) => {
-      pdf.rect(tableLeft, y, tableWidth, rowHeight);
+      const descriptionLines = pdf.splitTextToSize(item.description, widths[2] - 16);
+      const dynamicRowHeight = Math.max(
+        rowHeight,
+        descriptionLines.length * descriptionLineHeight + 12,
+      );
+
+      pdf.rect(tableLeft, y, tableWidth, dynamicRowHeight);
       x = tableLeft;
-      const row = [item.itemNumber, item.date, item.description, item.total];
-      row.forEach((value, index) => {
-        pdf.line(x, y, x, y + rowHeight);
-        const alignRight = index === 3 || index === 0;
-        const text = index === 2 ? pdf.splitTextToSize(String(value), widths[index] - 16)[0] ?? "" : String(value);
-        pdf.text(text, alignRight ? x + widths[index] - 8 : x + 8, y + 18, { align: alignRight ? "right" : "left" });
-        x += widths[index];
+      pdf.line(x + widths[0], y, x + widths[0], y + dynamicRowHeight);
+      pdf.line(
+        x + widths[0] + widths[1],
+        y,
+        x + widths[0] + widths[1],
+        y + dynamicRowHeight,
+      );
+      pdf.line(
+        x + widths[0] + widths[1] + widths[2],
+        y,
+        x + widths[0] + widths[1] + widths[2],
+        y + dynamicRowHeight,
+      );
+
+      pdf.text(item.itemNumber, x + widths[0] - 8, y + rowPaddingTop, {
+        align: "right",
       });
-      pdf.line(tableLeft + tableWidth, y, tableLeft + tableWidth, y + rowHeight);
-      y += rowHeight;
+      x += widths[0];
+
+      pdf.text(item.date, x + 8, y + rowPaddingTop);
+      x += widths[1];
+
+      pdf.text(descriptionLines, x + 8, y + rowPaddingTop);
+      x += widths[2];
+
+      pdf.text(item.total, x + widths[3] - 8, y + rowPaddingTop, {
+        align: "right",
+      });
+
+      y += dynamicRowHeight;
     });
     const dueLabelWidth = 90;
     const dueValueWidth = widths[3];
@@ -576,6 +612,12 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
       description: item.description.trim(),
       valueNumber: Number(item.value || 0),
     }));
+    const normalizedInvoiceNumber = invoiceNumber.trim();
+
+    if (!normalizedInvoiceNumber) {
+      setError("Enter an invoice number.");
+      return;
+    }
     if (normalizedItems.some((item) => !item.description)) {
       setError("Enter a description for every invoice item.");
       return;
@@ -591,7 +633,6 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
 
     setSaving(true);
     try {
-      const syncedInvoiceNumber = await syncNextInvoiceNumber();
       const cashflowValue = (-Math.abs(totalValue)).toFixed(2);
       const created = await cashFlowService.create({
         invoice: "Yes",
@@ -601,9 +642,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
         flat: flat.trim() || undefined,
         invoiceMedia: mediaFile
       });
-      const createdInvoiceNumber = formatInvoiceNumber(created.payment_number);
-      setInvoiceNumber(createdInvoiceNumber);
-      onCreated?.(`Invoice ${createdInvoiceNumber || syncedInvoiceNumber} sent to cashflow successfully.`);
+      onCreated?.(`Invoice ${normalizedInvoiceNumber} sent to cashflow successfully. Cashflow record #${created.payment_number}.`);
       onClose();
     } catch (requestError) {
       const message = (requestError as { response?: { data?: { detail?: string } } }).response?.data?.detail;
@@ -643,9 +682,13 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
         <div className="grid max-h-[calc(92vh-73px)] min-h-0 gap-0 xl:grid-cols-[390px_minmax(0,1fr)]">
           <form className="grid min-h-0 content-start gap-3 overflow-y-auto border-b border-oak-border p-4 xl:border-b-0 xl:border-r xl:p-4" onSubmit={(event) => event.preventDefault()}>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1.5 sm:col-span-2">
+              <label className="grid gap-1.5">
                 <span className="oak-label">Invoice date</span>
                 <input className="oak-input !min-h-10 !px-3 !py-2" type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="oak-label">Invoice number</span>
+                <input className="oak-input !min-h-10 !px-3 !py-2" value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} />
               </label>
               <label className="grid gap-1.5 sm:col-span-2">
                 <span className="oak-label">TO</span>

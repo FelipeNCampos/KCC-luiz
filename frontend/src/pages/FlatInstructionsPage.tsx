@@ -26,7 +26,7 @@ export function FlatInstructionsPage() {
         setBuildingName(response.building_name);
         setItems(response.data);
       })
-      .catch(() => setError("Unable to load instructions."))
+      .catch(() => setError("Unable to load guide videos."))
       .finally(() => setLoading(false));
   }, [flat, validFlat]);
 
@@ -44,17 +44,17 @@ export function FlatInstructionsPage() {
             </div>
           </div>
 
-          {loading ? <p className="mt-5 rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/60">Loading instructions...</p> : null}
+          {loading ? <p className="mt-5 rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/60">Loading guide videos...</p> : null}
           {error ? <p className="mt-5 rounded-xl bg-oak-dangerBg p-4 text-sm font-bold text-oak-danger">{error}</p> : null}
           {!loading && !error && items.length === 0 ? (
-            <p className="mt-5 rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/60">No instructions available for this flat.</p>
+            <p className="mt-5 rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/60">No guide videos available for this flat.</p>
           ) : null}
 
           <div className="mt-6 grid gap-5">
             {items.map((item, index) => (
               <article className="grid gap-4 rounded-xl border border-oak-border p-4" key={item.id}>
                 <div>
-                  <p className="oak-label">Instruction {index + 1}</p>
+                  <p className="oak-label">Guide Video {index + 1}</p>
                   <h2 className="mt-1 text-xl font-extrabold text-oak-coffee">{item.title}</h2>
                 </div>
                 {item.video_data ? (

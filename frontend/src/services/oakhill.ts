@@ -34,6 +34,7 @@ export type ContractorVisit = {
   id: string;
   name: string;
   company: string;
+  flat: string;
   building_name: string;
   job_description: string;
   mobile: string;
@@ -65,6 +66,7 @@ export type ContractorHistory = {
   next_notification_sent_at: string | null;
   name: string;
   company: string;
+  flat: string;
   building_name: string;
   job_description: string;
   mobile: string;

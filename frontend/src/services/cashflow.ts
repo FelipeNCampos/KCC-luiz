@@ -1,5 +1,7 @@
 import { api } from "./api";
 
+export type CashFlowScope = "main" | "cashflow52";
+
 export type CashFlowRow = {
   id: number;
   payment_number: number;
@@ -26,6 +28,7 @@ type CashFlowNextPaymentNumberResponse = {
 };
 
 export type CreateCashFlowPayload = {
+  scope?: CashFlowScope;
   invoice: "Yes" | "No";
   date: string;
   value: string;
@@ -42,6 +45,7 @@ export type UpdateCashFlowPayload = {
 
 export type CashFlowReportPayload = {
   email: string;
+  scope?: CashFlowScope;
   start_month: string;
   end_month: string;
   search?: string;
@@ -49,11 +53,12 @@ export type CashFlowReportPayload = {
 };
 
 export const cashFlowService = {
-  async list(params: { month: string; search?: string }) {
+  async list(params: { month: string; search?: string; scope?: CashFlowScope }) {
     const { data } = await api.get<CashFlowListResponse>("/cashflow", {
       params: {
         month: params.month,
-        search: params.search || undefined
+        search: params.search || undefined,
+        scope: params.scope || undefined
       }
     });
     return data;
@@ -66,6 +71,10 @@ export const cashFlowService = {
 
   async create(payload: CreateCashFlowPayload) {
     const formData = new FormData();
+    if (payload.scope) {
+      formData.append("scope", payload.scope);
+    }
+
     formData.append("invoice", payload.invoice);
     formData.append("date", payload.date);
     formData.append("value", payload.value);

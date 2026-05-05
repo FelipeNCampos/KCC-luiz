@@ -113,6 +113,7 @@ class ContractorPublicVisit(BaseModel):
     id: str
     name: str
     company: str
+    flat: str
     building_name: str
     door_code: str | None = None
     job_description: str
@@ -126,6 +127,7 @@ class ContractorOpenVisit(BaseModel):
     id: str
     name: str
     company: str
+    flat: str
     building_name: str
     job_description: str
     mobile: str
@@ -151,6 +153,7 @@ class ContractorVisitRead(BaseModel):
     id: str
     name: str
     company: str
+    flat: str
     building_name: str
     job_description: str
     mobile: str
@@ -242,6 +245,7 @@ class ContractorHistoryRead(BaseModel):
     next_notification_sent_at: datetime | None
     name: str
     company: str
+    flat: str
     building_name: str
     job_description: str
     mobile: str

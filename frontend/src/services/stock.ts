@@ -15,10 +15,15 @@ export type StockRequest = {
 };
 
 export type StockRequestList = { data: StockRequest[]; count: number };
+export type StockRequestCreateResponse = { data: StockRequest[]; count: number };
 
 export const stockService = {
-  async create(payload: { product_name: string; quantity: number; photo_name?: string | null; photo_data?: string | null }) {
-    const { data } = await api.post<StockRequest>("/stock-requests", payload);
+  async create(payload: {
+    items: Array<{ product_name: string; quantity: number }>;
+    photo_name?: string | null;
+    photo_data?: string | null;
+  }) {
+    const { data } = await api.post<StockRequestCreateResponse>("/stock-requests", payload);
     return data;
   },
   async list(params: { search?: string; status?: StockRequestStatus | ""; date_from?: string; date_to?: string; limit?: number } = {}) {

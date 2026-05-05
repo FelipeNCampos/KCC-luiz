@@ -5,7 +5,6 @@ import { Link } from "react-router-dom";
 
 import { DashboardShell } from "../components/DashboardShell";
 import { useAuth } from "../hooks/useAuth";
-import { cashFlowService, CashFlowListResponse } from "../services/cashflow";
 import { Acess, Building, ContractorVisit, oakhillService } from "../services/oakhill";
 import { StockRequest, stockService } from "../services/stock";
 import { canAccessOakHill } from "../utils/permissions";
@@ -17,11 +16,6 @@ type OutTarget = AccessRow & { defaultTime: string };
 
 function toMonthInputValue(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function formatCurrency(value: string | number) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(parsed);
 }
 
 function formatDate(value: string) {
@@ -66,15 +60,12 @@ function withSelectedTime(source: string, time: string) {
 export function DashboardPage() {
   const { user } = useAuth();
   const currentMonth = useMemo(() => toMonthInputValue(new Date()), []);
-  const [data, setData] = useState<CashFlowListResponse | null>(null);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [cleanerAccess, setCleanerAccess] = useState<Acess[]>([]);
   const [contractorRecords, setContractorRecords] = useState<ContractorVisit[]>([]);
   const [stockRequests, setStockRequests] = useState<StockRequest[]>([]);
-  const [loading, setLoading] = useState(true);
   const [recordsLoading, setRecordsLoading] = useState(true);
   const [savingOut, setSavingOut] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [recordsError, setRecordsError] = useState<string | null>(null);
   const [outTarget, setOutTarget] = useState<OutTarget | null>(null);
   const [outTime, setOutTime] = useState("");
@@ -99,32 +90,6 @@ export function DashboardPage() {
       setRecordsLoading(false);
     }
   }, [start, end]);
-
-  useEffect(() => {
-    let active = true;
-
-    setLoading(true);
-    setError(null);
-
-    cashFlowService
-      .list({ month: currentMonth })
-      .then((response) => {
-        if (!active) return;
-        setData(response);
-      })
-      .catch((requestError: AxiosError<{ detail?: string }>) => {
-        if (!active) return;
-        setError(requestError.response?.data?.detail ?? "Nao foi possivel carregar o saldo do mes.");
-      })
-      .finally(() => {
-        if (!active) return;
-        setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [currentMonth]);
 
   useEffect(() => {
     void loadRecords();
@@ -187,8 +152,6 @@ export function DashboardPage() {
       .slice(0, 20);
   }, [cleanerPairs, contractorRecords]);
 
-  const currentBalance = useMemo(() => formatCurrency(data?.current_balance ?? 0), [data?.current_balance]);
-
   function openOutModal(row: AccessRow) {
     setRecordsError(null);
     setOutTarget({ ...row, defaultTime: timeInputValue() });
@@ -225,20 +188,17 @@ export function DashboardPage() {
 
   return (
     <DashboardShell title="Overview" subtitle="Resumo rapido do mes">
-      <section>
+      <section className="grid gap-4 md:grid-cols-2">
         <Link
-          className="oak-card block p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-oak-taupe hover:shadow-oakLg active:translate-y-px"
+          className="oak-card flex h-full flex-col justify-between p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-oak-taupe hover:shadow-oakLg active:translate-y-px"
           to="/cash-flow"
         >
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="oak-label">Saldo do mes</p>
-              <p
-                className={`mt-3 text-4xl font-extrabold ${
-                  Number(data?.current_balance ?? 0) >= 0 ? "text-emerald-700" : "text-oak-danger"
-                }`}
-              >
-                {loading ? "Carregando..." : currentBalance}
+              <p className="oak-label">Financeiro</p>
+              <h2 className="mt-2 text-2xl font-extrabold text-oak-coffee">Cashflow</h2>
+              <p className="mt-3 max-w-[34ch] text-sm font-semibold leading-6 text-black/60">
+                Abra os registros financeiros do mes {currentMonth}.
               </p>
             </div>
             <div className="grid size-11 place-items-center rounded-xl bg-oak-panel text-oak-taupe">
@@ -246,12 +206,34 @@ export function DashboardPage() {
             </div>
           </div>
 
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-[52ch] text-sm font-semibold leading-6 text-black/60">
-              {error ?? `Clique para abrir o cashflow de ${data?.month ?? currentMonth}.`}
-            </p>
+          <div className="mt-5 flex items-center justify-between gap-3">
             <span className="inline-flex items-center gap-2 text-sm font-extrabold text-oak-coffee">
               Abrir cashflow
+              <ArrowRight size={16} strokeWidth={2.2} />
+            </span>
+          </div>
+        </Link>
+
+        <Link
+          className="oak-card flex h-full flex-col justify-between p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-oak-taupe hover:shadow-oakLg active:translate-y-px"
+          to="/cash-flow-52"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="oak-label">Financeiro</p>
+              <h2 className="mt-2 text-2xl font-extrabold text-oak-coffee">Cashflow 52</h2>
+              <p className="mt-3 max-w-[34ch] text-sm font-semibold leading-6 text-black/60">
+                Abra os registros do cashflow 52 do mes {currentMonth}, sem campo de flat.
+              </p>
+            </div>
+            <div className="grid size-11 place-items-center rounded-xl bg-oak-panel text-oak-taupe">
+              <CircleDollarSign size={21} strokeWidth={2} />
+            </div>
+          </div>
+
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 text-sm font-extrabold text-oak-coffee">
+              Abrir cashflow 52
               <ArrowRight size={16} strokeWidth={2.2} />
             </span>
           </div>
@@ -318,7 +300,9 @@ export function DashboardPage() {
               const isCleaner = row.type === "cleaner";
               const inAt = isCleaner ? row.in.data : row.visit.in_at;
               const outAt = isCleaner ? row.out?.data : row.visit.out_at;
-              const name = isCleaner ? (buildingById.get(row.building_id) ?? row.building_id) : row.visit.name;
+              const name = isCleaner
+                ? (buildingById.get(row.building_id) ?? row.building_id)
+                : `${row.visit.name} | Flat ${row.visit.flat}`;
               const description = isCleaner ? "Cleaner" : row.visit.job_description;
               return (
                 <tr className="border-t border-oak-border" key={`${row.type}-${row.key}`}>

@@ -10,7 +10,14 @@ from app.api.deps import require_roles
 from app.db.session import get_db
 from app.models.oakhill import Condominio, StockRequest
 from app.models.user import User
-from app.schemas.stock import StockRequestCreate, StockRequestRead, StockRequestStatus, StockRequestStatusUpdate
+from app.schemas.stock import (
+    StockRequestCreate,
+    StockRequestCreateResponse,
+    StockRequestItemCreate,
+    StockRequestRead,
+    StockRequestStatus,
+    StockRequestStatusUpdate,
+)
 
 router = APIRouter()
 
@@ -78,24 +85,69 @@ def read_request(row: StockRequest) -> StockRequestRead:
     )
 
 
-@router.post("/stock-requests", response_model=StockRequestRead, status_code=status.HTTP_201_CREATED)
-def create_stock_request(payload: StockRequestCreate, db: Session = Depends(get_db)) -> StockRequestRead:
+def normalized_items(payload: StockRequestCreate) -> list[StockRequestItemCreate]:
+    if payload.items:
+        return payload.items
+
+    if payload.product_name is None or payload.quantity is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Product name and quantity are required",
+        )
+
+    return [
+        StockRequestItemCreate(
+            product_name=payload.product_name,
+            quantity=payload.quantity,
+        )
+    ]
+
+
+@router.post(
+    "/stock-requests",
+    response_model=StockRequestRead | StockRequestCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_stock_request(
+    payload: StockRequestCreate,
+    db: Session = Depends(get_db),
+) -> StockRequestRead | StockRequestCreateResponse:
     condominio_id = user_condominio_id(db, explicit=payload.condominio_id)
-    product_name = payload.product_name.strip()
-    if not product_name:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Product name is required")
-    row = StockRequest(
-        product_name=product_name,
-        quantity=payload.quantity,
-        photo_name=payload.photo_name.strip() if payload.photo_name and payload.photo_name.strip() else None,
-        photo_data=validate_photo(payload.photo_data),
-        status="pending",
-        condominio_id=condominio_id,
-    )
-    db.add(row)
+    items = normalized_items(payload)
+    photo_name = payload.photo_name.strip() if payload.photo_name and payload.photo_name.strip() else None
+    photo_data = validate_photo(payload.photo_data)
+    rows: list[StockRequest] = []
+
+    for item in items:
+        product_name = item.product_name.strip()
+        if not product_name:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Product name is required",
+            )
+
+        row = StockRequest(
+            product_name=product_name,
+            quantity=item.quantity,
+            photo_name=photo_name,
+            photo_data=photo_data,
+            status="pending",
+            condominio_id=condominio_id,
+        )
+        db.add(row)
+        rows.append(row)
+
     db.commit()
-    db.refresh(row)
-    return read_request(row)
+    for row in rows:
+        db.refresh(row)
+
+    if payload.items:
+        return StockRequestCreateResponse(
+            data=[read_request(row) for row in rows],
+            count=len(rows),
+        )
+
+    return read_request(rows[0])
 
 
 @router.get("/stock-requests")

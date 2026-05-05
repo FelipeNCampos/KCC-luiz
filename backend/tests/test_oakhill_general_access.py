@@ -77,3 +77,32 @@ def test_cleaner_checkout_requires_and_stores_flat_checklist(client: TestClient)
     assert check_out.status_code == 200
     assert check_out.json()["operacao"] == 1
     assert [item["label"] for item in check_out.json()["checkout_checklist_items"]] == ["Kitchen cleaned", "Bathroom checked"]
+
+
+def test_contractor_access_includes_flat_in_records(client: TestClient) -> None:
+    check_in = client.post(
+        "/api/v1/contractor-access/check-in",
+        json={
+            "name": "Carlos Contractor",
+            "company": "Fix Co",
+            "building_id": "52",
+            "job_description": "Air conditioner maintenance",
+            "mobile": "62 91111 1111",
+        },
+    )
+    assert check_in.status_code == 201
+    assert check_in.json()["flat"] == "52"
+    assert check_in.json()["building_name"] == "Flat 52"
+
+    open_response = client.get("/api/v1/contractor-access/open")
+    assert open_response.status_code == 200
+    assert open_response.json()["count"] == 1
+    assert open_response.json()["data"][0]["flat"] == "52"
+
+    token = get_admin_token(client, email="contractor-flat-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    list_response = client.get("/api/v1/contractor-access/", headers=headers)
+    assert list_response.status_code == 200
+    assert list_response.json()["count"] == 1
+    assert list_response.json()["data"][0]["flat"] == "52"

@@ -232,6 +232,81 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     assert april_search.json()["current_balance"] == "150.00"
 
 
+def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClient) -> None:
+    admin_token = get_admin_token(client, email="cashflow-52-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    main_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "No",
+            "date": "2026-04-01",
+            "value": "100.00",
+            "description": "Main cashflow",
+            "flat": "Flat 50",
+        },
+    )
+    assert main_response.status_code == 201
+
+    scoped_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "scope": "cashflow52",
+            "invoice": "No",
+            "date": "2026-04-02",
+            "value": "25.00",
+            "description": "Cashflow 52 record",
+            "flat": "Should not be stored",
+        },
+    )
+    assert scoped_response.status_code == 201
+    assert scoped_response.json()["payment_number"] == 1
+    assert scoped_response.json()["flat"] is None
+
+    main_list = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-04"})
+    assert main_list.status_code == 200
+    assert main_list.json()["monthly_total"] == "100.00"
+    assert [item["description"] for item in main_list.json()["items"]] == ["Main cashflow"]
+
+    scoped_list = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"month": "2026-04", "scope": "cashflow52"},
+    )
+    assert scoped_list.status_code == 200
+    assert scoped_list.json()["monthly_total"] == "25.00"
+    assert [item["description"] for item in scoped_list.json()["items"]] == [
+        "Cashflow 52 record"
+    ]
+    assert scoped_list.json()["items"][0]["flat"] is None
+
+    scoped_flat_search = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"month": "2026-04", "scope": "cashflow52", "search": "stored"},
+    )
+    assert scoped_flat_search.status_code == 200
+    assert scoped_flat_search.json()["monthly_total"] == "25.00"
+    assert scoped_flat_search.json()["items"] == []
+
+    preview_response = client.post(
+        "/api/v1/cashflow/report/preview",
+        headers=headers,
+        json={
+            "scope": "cashflow52",
+            "start_month": "2026-04",
+            "end_month": "2026-04",
+            "include_invoice_table": True,
+        },
+    )
+    assert preview_response.status_code == 200
+    preview_text = PdfReader(BytesIO(preview_response.content)).pages[0].extract_text()
+    assert "Cashflow 52 Report" in preview_text
+    assert "Flat" not in preview_text
+
+
 def test_permission_for_non_admin_or_manager(client: TestClient) -> None:
     user_auth = register_user(client, "resident@example.com")
     user_token = login_user(client, "resident@example.com")

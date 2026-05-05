@@ -43,3 +43,31 @@ def test_public_stock_request_can_be_managed_by_status(client: TestClient) -> No
     )
     assert search_response.status_code == 200
     assert search_response.json()["count"] == 1
+
+
+def test_public_stock_request_can_create_multiple_products(client: TestClient) -> None:
+    create_response = client.post(
+        "/api/v1/stock-requests",
+        json={
+            "items": [
+                {"product_name": "Toilet paper", "quantity": 4},
+                {"product_name": "Soap", "quantity": 2},
+            ]
+        },
+    )
+    assert create_response.status_code == 201
+
+    created = create_response.json()
+    assert created["count"] == 2
+    assert [item["product_name"] for item in created["data"]] == [
+        "Toilet paper",
+        "Soap",
+    ]
+    assert [item["quantity"] for item in created["data"]] == [4, 2]
+
+    token = get_admin_token(client, email="stock-batch-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    pending_response = client.get("/api/v1/stock-requests", headers=headers)
+    assert pending_response.status_code == 200
+    assert pending_response.json()["count"] == 2

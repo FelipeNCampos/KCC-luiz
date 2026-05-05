@@ -3,7 +3,7 @@ import { AxiosError } from "axios";
 import { CircleDollarSign, FileSpreadsheet, Pencil, Plus, Search, Upload, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
-import { cashFlowService, CashFlowListResponse, CashFlowRow } from "../services/cashflow";
+import { cashFlowService, CashFlowListResponse, CashFlowRow, CashFlowScope } from "../services/cashflow";
 
 type FormState = {
   invoice: "Yes" | "No";
@@ -40,6 +40,12 @@ type ReportFormState = {
   startMonth: string;
   endMonth: string;
   includeInvoiceTable: boolean;
+};
+
+type CashFlowPageProps = {
+  title?: string;
+  scope?: CashFlowScope;
+  showFlat?: boolean;
 };
 
 const FLAT_OPTIONS = ["Flat 50", "Flat 51", "Flat 52"] as const;
@@ -81,7 +87,7 @@ const initialForm: FormState = {
   invoiceMedia: null
 };
 
-export function CashFlowPage() {
+export function CashFlowPage({ title = "Cashflow", scope = "main", showFlat = true }: CashFlowPageProps = {}) {
   const monthInputRef = useRef<HTMLInputElement | null>(null);
   const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
@@ -111,6 +117,8 @@ export function CashFlowPage() {
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
   const [savingText, setSavingText] = useState(false);
   const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
+  const tableColumnCount = showFlat ? 8 : 7;
+  const tableMinWidthClass = showFlat ? "min-w-[980px]" : "min-w-[860px]";
 
   useEffect(() => {
     let active = true;
@@ -118,7 +126,7 @@ export function CashFlowPage() {
     setError(null);
 
     cashFlowService
-      .list({ month, search })
+      .list({ month, search, scope })
       .then((response) => {
         if (!active) return;
         setData(response);
@@ -135,7 +143,7 @@ export function CashFlowPage() {
     return () => {
       active = false;
     };
-  }, [month, search]);
+  }, [month, scope, search]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -183,6 +191,7 @@ export function CashFlowPage() {
       .previewReport({
         start_month: reportForm.startMonth,
         end_month: reportForm.endMonth,
+        scope,
         search: search.trim() || undefined,
         include_invoice_table: reportForm.includeInvoiceTable
       })
@@ -206,7 +215,7 @@ export function CashFlowPage() {
     return () => {
       active = false;
     };
-  }, [isReportOpen, reportForm.startMonth, reportForm.endMonth, reportForm.includeInvoiceTable, search]);
+  }, [isReportOpen, reportForm.startMonth, reportForm.endMonth, reportForm.includeInvoiceTable, scope, search]);
 
   useEffect(() => {
     return () => {
@@ -225,7 +234,7 @@ export function CashFlowPage() {
   }, [data?.current_balance, data?.monthly_total]);
 
   async function reload() {
-    const response = await cashFlowService.list({ month, search });
+    const response = await cashFlowService.list({ month, search, scope });
     setData(response);
   }
 
@@ -248,11 +257,12 @@ export function CashFlowPage() {
     try {
       const invoice = form.invoiceMedia ? "Yes" : "No";
       await cashFlowService.create({
+        scope,
         invoice,
         date: form.date,
         value: form.value,
         description: form.description,
-        flat: form.flat,
+        flat: showFlat ? form.flat : undefined,
         invoiceMedia: form.invoiceMedia
       });
 
@@ -338,6 +348,7 @@ export function CashFlowPage() {
     try {
       const response = await cashFlowService.sendReport({
         email: reportForm.email.trim(),
+        scope,
         start_month: reportForm.startMonth,
         end_month: reportForm.endMonth,
         search: search.trim() || undefined,
@@ -475,7 +486,7 @@ export function CashFlowPage() {
       await cashFlowService.update(textEditor.record.id, {
         value: textEditor.value,
         description: textEditor.description.trim() || null,
-        flat: textEditor.flat.trim() || null
+        flat: showFlat ? textEditor.flat.trim() || null : null
       });
       setTextEditor(null);
       setFeedback({ type: "success", message: "Record updated successfully." });
@@ -518,7 +529,7 @@ export function CashFlowPage() {
 
   return (
     <DashboardShell
-      title="Cashflow"
+      title={title}
       subtitle=""
       rightSlot={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
@@ -538,7 +549,7 @@ export function CashFlowPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-oak-taupe" />
             <input
               className="oak-input pl-9"
-              placeholder="Search by Description or Flat"
+              placeholder={showFlat ? "Search by Description or Flat" : "Search by Description"}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -590,7 +601,7 @@ export function CashFlowPage() {
 
       <section className="oak-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left">
+          <table className={`w-full ${tableMinWidthClass} text-left`}>
             <thead className="bg-oak-panel text-[11px] uppercase text-oak-muted">
               <tr>
                 <th className="px-4 py-3 font-extrabold">Payment Number</th>
@@ -598,7 +609,7 @@ export function CashFlowPage() {
                 <th className="px-4 py-3 font-extrabold">Date</th>
                 <th className="px-4 py-3 font-extrabold text-right">Amount</th>
                 <th className="px-4 py-3 font-extrabold">Comments</th>
-                <th className="px-4 py-3 font-extrabold">Flat</th>
+                {showFlat ? <th className="px-4 py-3 font-extrabold">Flat</th> : null}
                 <th className="px-4 py-3 font-extrabold text-right">Balance</th>
                 <th className="px-4 py-3 font-extrabold">Action</th>
               </tr>
@@ -607,13 +618,13 @@ export function CashFlowPage() {
             <tbody className="divide-y divide-oak-border">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-6 text-sm font-semibold text-black/60" colSpan={8}>
+                  <td className="px-4 py-6 text-sm font-semibold text-black/60" colSpan={tableColumnCount}>
                     Loading cash flow records...
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
-                  <td className="px-4 py-6 text-sm font-bold text-oak-danger" colSpan={8}>
+                  <td className="px-4 py-6 text-sm font-bold text-oak-danger" colSpan={tableColumnCount}>
                     {error}
                   </td>
                 </tr>
@@ -671,19 +682,21 @@ export function CashFlowPage() {
                         <span className="truncate">{row.description ?? "Add"}</span>
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                      <button
-                        className="inline-flex max-w-40 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openTextEditor(row);
-                        }}
-                      >
-                        {row.flat ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
-                        <span className="truncate">{row.flat ?? "Add"}</span>
-                      </button>
-                    </td>
+                    {showFlat ? (
+                      <td className="px-4 py-3 text-sm font-semibold text-black/70">
+                        <button
+                          className="inline-flex max-w-40 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openTextEditor(row);
+                          }}
+                        >
+                          {row.flat ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
+                          <span className="truncate">{row.flat ?? "Add"}</span>
+                        </button>
+                      </td>
+                    ) : null}
                     <td
                       className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.balance) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
                     >
@@ -705,7 +718,7 @@ export function CashFlowPage() {
                 ))
               ) : (
                 <tr>
-                  <td className="px-4 py-8 text-sm font-semibold text-black/60" colSpan={8}>
+                  <td className="px-4 py-8 text-sm font-semibold text-black/60" colSpan={tableColumnCount}>
                     No records for this month.
                   </td>
                 </tr>
@@ -720,7 +733,7 @@ export function CashFlowPage() {
           <article className="w-full max-w-2xl rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
-                <p className="oak-label">Cashflow</p>
+                <p className="oak-label">{title}</p>
                 <h2 className="text-xl font-extrabold text-oak-coffee">Add record</h2>
               </div>
               <button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={closeCreateRecord}>
@@ -756,7 +769,7 @@ export function CashFlowPage() {
                 </label>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className={`grid gap-4 ${showFlat ? "sm:grid-cols-2" : ""}`}>
                 <label className="grid gap-2">
                   <span className="oak-label">Description</span>
                   <input
@@ -766,14 +779,16 @@ export function CashFlowPage() {
                   />
                 </label>
 
-                <label className="grid gap-2">
-                  <span className="oak-label">Flat</span>
-                  <input
-                    className="oak-input"
-                    value={form.flat}
-                    onChange={(event) => setForm((prev) => ({ ...prev, flat: event.target.value }))}
-                  />
-                </label>
+                {showFlat ? (
+                  <label className="grid gap-2">
+                    <span className="oak-label">Flat</span>
+                    <input
+                      className="oak-input"
+                      value={form.flat}
+                      onChange={(event) => setForm((prev) => ({ ...prev, flat: event.target.value }))}
+                    />
+                  </label>
+                ) : null}
               </div>
 
               <label className="grid gap-2">
@@ -827,10 +842,10 @@ export function CashFlowPage() {
 
       {isReportOpen ? (
         <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 p-4">
-          <article className="flex max-h-[92dvh] w-full max-w-5xl flex-col rounded-2xl border border-oak-border bg-white shadow-oakLg">
+          <article className="flex h-[90dvh] w-[90vw] max-w-[90vw] flex-col rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
-                <p className="oak-label">Cashflow</p>
+                <p className="oak-label">{title}</p>
                 <h2 className="text-xl font-extrabold text-oak-coffee">Send report</h2>
               </div>
               <button
@@ -914,7 +929,7 @@ export function CashFlowPage() {
                 ) : reportPreviewError ? (
                   <div className="grid h-full min-h-[420px] place-items-center p-6 text-center text-sm font-bold text-oak-danger">{reportPreviewError}</div>
                 ) : reportPreviewUrl ? (
-                  <iframe className="h-full min-h-[420px] w-full bg-white" src={reportPreviewUrl} title="Cashflow report preview" />
+                  <iframe className="h-full min-h-[420px] w-full bg-white" src={reportPreviewUrl} title={`${title} report preview`} />
                 ) : (
                   <div className="grid h-full min-h-[420px] place-items-center text-sm font-bold text-black/55">Select a period to preview.</div>
                 )}
@@ -929,7 +944,7 @@ export function CashFlowPage() {
           <article className="w-full max-w-md rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
-                <p className="oak-label">Cashflow</p>
+                <p className="oak-label">{title}</p>
                 <h2 className="text-lg font-extrabold text-oak-coffee">Edit record</h2>
               </div>
               <button
@@ -965,21 +980,23 @@ export function CashFlowPage() {
                 />
               </label>
 
-              <label className="grid gap-2">
-                <span className="oak-label">Flat</span>
-                <select
-                  className="oak-input"
-                  value={textEditor.flat || ""}
-                  onChange={(event) => setTextEditor((current) => (current ? { ...current, flat: event.target.value, error: null } : current))}
-                >
-                  <option value="">Select a flat</option>
-                  {FLAT_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {showFlat ? (
+                <label className="grid gap-2">
+                  <span className="oak-label">Flat</span>
+                  <select
+                    className="oak-input"
+                    value={textEditor.flat || ""}
+                    onChange={(event) => setTextEditor((current) => (current ? { ...current, flat: event.target.value, error: null } : current))}
+                  >
+                    <option value="">Select a flat</option>
+                    {FLAT_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
 
               {textEditor.error ? <p className="text-sm font-bold text-oak-danger">{textEditor.error}</p> : null}
 

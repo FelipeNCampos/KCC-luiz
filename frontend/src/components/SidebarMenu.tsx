@@ -77,10 +77,16 @@ export function SidebarMenu() {
           ) : null}
 
           {canAccessCashFlow(user) ? (
-            <NavLink to="/cash-flow" className={navItemClass}>
-              <CircleDollarSign size={18} strokeWidth={2.1} />
-              <span>Cashflow</span>
-            </NavLink>
+            <>
+              <NavLink to="/cash-flow" className={navItemClass}>
+                <CircleDollarSign size={18} strokeWidth={2.1} />
+                <span>Cashflow</span>
+              </NavLink>
+              <NavLink to="/cash-flow-52" className={navItemClass}>
+                <CircleDollarSign size={18} strokeWidth={2.1} />
+                <span>Cashflow 52</span>
+              </NavLink>
+            </>
           ) : null}
 
           {canAccessTasks(user) ? (
@@ -142,7 +148,7 @@ export function SidebarMenu() {
 
               <NavLink to="/instructions" className={navItemClass}>
                 <BookOpen size={18} strokeWidth={2.1} />
-                <span>Instruções</span>
+                <span>Guide Video</span>
               </NavLink>
             </>
           ) : null}

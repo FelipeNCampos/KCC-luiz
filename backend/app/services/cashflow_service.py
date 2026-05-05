@@ -15,13 +15,25 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.models.cashflow import CashFlowRecord
+from app.models.cashflow import CASHFLOW_52_SCOPE, DEFAULT_CASHFLOW_SCOPE, CashFlowRecord
 from app.repositories.cashflow_repository import CashFlowRepository
 from app.schemas.cashflow import CashFlowCreate, CashFlowListResponse, CashFlowRow, CashFlowUpdate
 from app.services.email_service import EmailService
 
 
 class CashFlowService:
+    CASHFLOW_SCOPE_ALIASES = {
+        DEFAULT_CASHFLOW_SCOPE: DEFAULT_CASHFLOW_SCOPE,
+        "principal": DEFAULT_CASHFLOW_SCOPE,
+        "cashflow52": CASHFLOW_52_SCOPE,
+        "cashflow_52": CASHFLOW_52_SCOPE,
+        "cashflow-52": CASHFLOW_52_SCOPE,
+        "flat52": CASHFLOW_52_SCOPE,
+        "flat_52": CASHFLOW_52_SCOPE,
+        "flat-52": CASHFLOW_52_SCOPE,
+        "52": CASHFLOW_52_SCOPE,
+    }
+
     def __init__(
         self,
         repository: CashFlowRepository,
@@ -49,10 +61,16 @@ class CashFlowService:
             if payload.description and payload.description.strip()
             else None
         )
-        flat = payload.flat.strip() if payload.flat and payload.flat.strip() else None
+        cashflow_scope = self._normalize_scope(payload.scope)
+        flat = (
+            payload.flat.strip()
+            if self._scope_has_flat(cashflow_scope) and payload.flat and payload.flat.strip()
+            else None
+        )
 
         record = CashFlowRecord(
             payment_number=self.repository.get_next_payment_number(),
+            cashflow_scope=cashflow_scope,
             has_invoice=payload.has_invoice,
             invoice_media_name=invoice_media_name if payload.has_invoice else None,
             invoice_media_mime=invoice_media_mime if payload.has_invoice else None,
@@ -65,9 +83,14 @@ class CashFlowService:
         )
         return self.repository.create(record)
 
-    def list_month(self, month: str | None, search: str | None = None) -> CashFlowListResponse:
+    def list_month(
+        self,
+        month: str | None,
+        search: str | None = None,
+        scope: str | None = None,
+    ) -> CashFlowListResponse:
         month_label, month_start, month_end = self._parse_month(month)
-        return self.list_range(month_label, month_start, month_end, search)
+        return self.list_range(month_label, month_start, month_end, search, scope)
 
     def get_next_payment_number(self) -> int:
         return self.repository.get_next_payment_number()
@@ -78,13 +101,16 @@ class CashFlowService:
         start_date: date,
         end_date: date,
         search: str | None = None,
+        scope: str | None = None,
     ) -> CashFlowListResponse:
-        records = self.repository.list_range_records(start_date, end_date)
+        cashflow_scope = self._normalize_scope(scope)
+        records = self.repository.list_range_records(start_date, end_date, cashflow_scope)
         query = (search or "").strip().lower()
-        opening_balance = self.repository.get_balance_before(start_date)
+        opening_balance = self.repository.get_balance_before(start_date, cashflow_scope)
         running_balance = opening_balance
         period_total = Decimal("0")
         items: list[CashFlowRow] = []
+        include_flat = self._scope_has_flat(cashflow_scope)
 
         for dynamic_payment_number, record in enumerate(records, start=1):
             period_total += record.amount
@@ -92,8 +118,10 @@ class CashFlowService:
 
             description = record.description or ""
             flat = record.flat or ""
+            matches_description = query in description.lower()
+            matches_flat = include_flat and query in flat.lower()
 
-            if query and query not in description.lower() and query not in flat.lower():
+            if query and not matches_description and not matches_flat:
                 continue
 
             items.append(
@@ -139,7 +167,11 @@ class CashFlowService:
         if "description" in payload.model_fields_set:
             record.description = self._clean_optional_text(payload.description)
         if "flat" in payload.model_fields_set:
-            record.flat = self._clean_optional_text(payload.flat)
+            record.flat = (
+                self._clean_optional_text(payload.flat)
+                if self._scope_has_flat(record.cashflow_scope)
+                else None
+            )
         if "value" in payload.model_fields_set and payload.value is not None:
             record.amount = payload.value
         return self.repository.save(record)
@@ -184,7 +216,11 @@ class CashFlowService:
         )
 
     def row_for_record(self, record: CashFlowRecord) -> CashFlowRow:
-        listing = self.list_month(month=record.record_date.strftime("%Y-%m"), search=None)
+        listing = self.list_month(
+            month=record.record_date.strftime("%Y-%m"),
+            search=None,
+            scope=record.cashflow_scope,
+        )
         for row in listing.items:
             if row.id == record.id:
                 return row
@@ -207,6 +243,7 @@ class CashFlowService:
         recipient: str,
         start_month: str | None,
         end_month: str | None,
+        scope: str | None = None,
         search: str | None = None,
         include_invoice_table: bool = False,
         fallback_month: str | None = None,
@@ -214,13 +251,17 @@ class CashFlowService:
         period_label, report_data = self.build_range_report_pdf(
             start_month=start_month,
             end_month=end_month,
+            scope=scope,
             search=search,
             include_invoice_table=include_invoice_table,
             fallback_month=fallback_month,
         )
-        file_name = f"cashflow-report-{period_label}.pdf"
-        subject = f"Cashflow report {period_label}"
-        body = f"Attached is the cashflow report for {period_label}."
+        cashflow_scope = self._normalize_scope(scope)
+        report_name = self._scope_report_name(cashflow_scope)
+        file_prefix = "cashflow-52" if cashflow_scope == CASHFLOW_52_SCOPE else "cashflow"
+        file_name = f"{file_prefix}-report-{period_label}.pdf"
+        subject = f"{report_name} report {period_label}"
+        body = f"Attached is the {report_name.lower()} report for {period_label}."
 
         self.email_service.send_report(
             recipient=recipient,
@@ -235,6 +276,7 @@ class CashFlowService:
         self,
         start_month: str | None,
         end_month: str | None,
+        scope: str | None = None,
         search: str | None = None,
         include_invoice_table: bool = False,
         fallback_month: str | None = None,
@@ -244,15 +286,18 @@ class CashFlowService:
             end_month=end_month,
             fallback_month=fallback_month,
         )
-        listing = self.list_range(period_label, period_start, period_end, search)
-        opening_balance = self.repository.get_balance_before(period_start)
+        cashflow_scope = self._normalize_scope(scope)
+        listing = self.list_range(period_label, period_start, period_end, search, cashflow_scope)
+        opening_balance = self.repository.get_balance_before(period_start, cashflow_scope)
         closing_balance = opening_balance + listing.monthly_total
         report_data = self._build_report_pdf(
             listing,
             opening_balance,
             closing_balance,
+            self._scope_report_name(cashflow_scope),
             search,
             include_invoice_table,
+            self._scope_has_flat(cashflow_scope),
         )
         return period_label, report_data
 
@@ -261,16 +306,20 @@ class CashFlowService:
         listing: CashFlowListResponse,
         opening_balance: Decimal,
         closing_balance: Decimal,
+        report_title: str,
         search: str | None,
         include_invoice_table: bool,
+        include_flat_fields: bool,
     ) -> bytes:
         writer = PdfWriter()
         summary_pdf = self._build_report_summary_pdf(
             listing,
             opening_balance,
             closing_balance,
+            report_title,
             search,
             include_invoice_table,
+            include_flat_fields,
         )
         for page in PdfReader(BytesIO(summary_pdf)).pages:
             writer.add_page(page)
@@ -295,8 +344,10 @@ class CashFlowService:
         listing: CashFlowListResponse,
         opening_balance: Decimal,
         closing_balance: Decimal,
+        report_title: str,
         search: str | None,
         include_invoice_table: bool,
+        include_flat_fields: bool,
     ) -> bytes:
         output = BytesIO()
         doc = SimpleDocTemplate(
@@ -309,7 +360,7 @@ class CashFlowService:
         )
         styles = getSampleStyleSheet()
         story = [
-            Paragraph("Cashflow Report", styles["Title"]),
+            Paragraph(f"{report_title} Report", styles["Title"]),
             Paragraph(f"Period: {listing.month}", styles["Normal"]),
             Paragraph(
                 f"Filter: {search.strip()}"
@@ -330,53 +381,92 @@ class CashFlowService:
         )
         story.append(Spacer(1, 12))
 
-        rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Flat", "Balance"]]
-        rows.extend(
-            [
+        if include_flat_fields:
+            rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Flat", "Balance"]]
+            rows.extend(
                 [
-                    f"#{item.payment_number}",
-                    "Yes" if item.has_invoice else "No",
-                    CashFlowService._format_date(item.record_date),
-                    CashFlowService._format_money(item.amount),
-                    item.description or "",
-                    item.flat or "",
-                    CashFlowService._format_money(item.balance),
+                    [
+                        f"#{item.payment_number}",
+                        "Yes" if item.has_invoice else "No",
+                        CashFlowService._format_date(item.record_date),
+                        CashFlowService._format_money(item.amount),
+                        item.description or "",
+                        item.flat or "",
+                        CashFlowService._format_money(item.balance),
+                    ]
+                    for item in listing.items
                 ]
-                for item in listing.items
-            ]
-        )
-        if len(rows) == 1:
-            rows.append(["-", "-", "-", "-", "No records for this period.", "-", "-"])
+            )
+            if len(rows) == 1:
+                rows.append(["-", "-", "-", "-", "No records for this period.", "-", "-"])
+            record_widths = [18 * mm, 18 * mm, 23 * mm, 25 * mm, 50 * mm, 18 * mm, 25 * mm]
+        else:
+            rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Balance"]]
+            rows.extend(
+                [
+                    [
+                        f"#{item.payment_number}",
+                        "Yes" if item.has_invoice else "No",
+                        CashFlowService._format_date(item.record_date),
+                        CashFlowService._format_money(item.amount),
+                        item.description or "",
+                        CashFlowService._format_money(item.balance),
+                    ]
+                    for item in listing.items
+                ]
+            )
+            if len(rows) == 1:
+                rows.append(["-", "-", "-", "-", "No records for this period.", "-"])
+            record_widths = [20 * mm, 20 * mm, 24 * mm, 28 * mm, 63 * mm, 25 * mm]
         story.append(
             CashFlowService._styled_table(
                 rows,
-                [18 * mm, 18 * mm, 23 * mm, 25 * mm, 50 * mm, 18 * mm, 25 * mm],
+                record_widths,
             )
         )
 
         if include_invoice_table:
             story.append(Spacer(1, 14))
             story.append(Paragraph("Invoices", styles["Heading2"]))
-            invoice_rows = [["Payment #", "Date", "File", "Comments", "Flat"]]
-            invoice_rows.extend(
-                [
+            if include_flat_fields:
+                invoice_rows = [["Payment #", "Date", "File", "Comments", "Flat"]]
+                invoice_rows.extend(
                     [
-                        f"#{item.payment_number}",
-                        CashFlowService._format_date(item.record_date),
-                        item.invoice_media_name or "invoice",
-                        item.description or "",
-                        item.flat or "",
+                        [
+                            f"#{item.payment_number}",
+                            CashFlowService._format_date(item.record_date),
+                            item.invoice_media_name or "invoice",
+                            item.description or "",
+                            item.flat or "",
+                        ]
+                        for item in listing.items
+                        if item.has_invoice
                     ]
-                    for item in listing.items
-                    if item.has_invoice
-                ]
-            )
-            if len(invoice_rows) == 1:
-                invoice_rows.append(["-", "-", "No invoice media in this period.", "-", "-"])
+                )
+                if len(invoice_rows) == 1:
+                    invoice_rows.append(["-", "-", "No invoice media in this period.", "-", "-"])
+                invoice_widths = [22 * mm, 25 * mm, 45 * mm, 62 * mm, 23 * mm]
+            else:
+                invoice_rows = [["Payment #", "Date", "File", "Comments"]]
+                invoice_rows.extend(
+                    [
+                        [
+                            f"#{item.payment_number}",
+                            CashFlowService._format_date(item.record_date),
+                            item.invoice_media_name or "invoice",
+                            item.description or "",
+                        ]
+                        for item in listing.items
+                        if item.has_invoice
+                    ]
+                )
+                if len(invoice_rows) == 1:
+                    invoice_rows.append(["-", "-", "No invoice media in this period.", "-"])
+                invoice_widths = [25 * mm, 28 * mm, 55 * mm, 72 * mm]
             story.append(
                 CashFlowService._styled_table(
                     invoice_rows,
-                    [22 * mm, 25 * mm, 45 * mm, 62 * mm, 23 * mm],
+                    invoice_widths,
                 )
             )
 
@@ -500,6 +590,28 @@ class CashFlowService:
     @staticmethod
     def _format_date(value: date) -> str:
         return value.strftime("%d-%m-%Y")
+
+    @classmethod
+    def _normalize_scope(cls, scope: str | None) -> str:
+        normalized = (scope or DEFAULT_CASHFLOW_SCOPE).strip().lower().replace(" ", "")
+        if not normalized:
+            normalized = DEFAULT_CASHFLOW_SCOPE
+
+        cashflow_scope = cls.CASHFLOW_SCOPE_ALIASES.get(normalized)
+        if cashflow_scope is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid cashflow scope",
+            )
+        return cashflow_scope
+
+    @classmethod
+    def _scope_has_flat(cls, scope: str | None) -> bool:
+        return cls._normalize_scope(scope) == DEFAULT_CASHFLOW_SCOPE
+
+    @classmethod
+    def _scope_report_name(cls, scope: str | None) -> str:
+        return "Cashflow 52" if cls._normalize_scope(scope) == CASHFLOW_52_SCOPE else "Cashflow"
 
     @staticmethod
     def _parse_month(month: str | None) -> tuple[str, date, date]:
