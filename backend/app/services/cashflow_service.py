@@ -50,12 +50,6 @@ class CashFlowService:
         invoice_media_mime: str | None = None,
         invoice_media_data: bytes | None = None,
     ) -> CashFlowRecord:
-        if payload.has_invoice and not invoice_media_data:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Invoice media is required when invoice is Yes",
-            )
-
         description = (
             payload.description.strip()
             if payload.description and payload.description.strip()

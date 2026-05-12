@@ -196,7 +196,7 @@ export function DashboardPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="oak-label">Financeiro</p>
-              <h2 className="mt-2 text-2xl font-extrabold text-oak-coffee">Cashflow</h2>
+              <h2 className="mt-2 text-2xl font-extrabold text-oak-coffee">Cashflow penthouse</h2>
               <p className="mt-3 max-w-[34ch] text-sm font-semibold leading-6 text-black/60">
                 Abra os registros financeiros do mes {currentMonth}.
               </p>

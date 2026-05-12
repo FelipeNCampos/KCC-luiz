@@ -138,6 +138,27 @@ def test_payment_numbers_are_dynamic_by_record_date(client: TestClient) -> None:
     assert [item["payment_number"] for item in items] == [1, 2]
 
 
+def test_create_record_allows_invoice_without_media(client: TestClient) -> None:
+    admin_token = get_admin_token(client, email="invoice-without-media@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "Yes",
+            "date": "2026-04-20",
+            "value": "-80.00",
+            "description": "Invoice without attachment",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["has_invoice"] is True
+    assert body["invoice_media_name"] is None
+
+
 def test_month_balance_starts_from_previous_month_closing_balance(client: TestClient) -> None:
     admin_token = get_admin_token(client, email="carry-balance-admin@example.com")
     headers = {"Authorization": f"Bearer {admin_token}"}

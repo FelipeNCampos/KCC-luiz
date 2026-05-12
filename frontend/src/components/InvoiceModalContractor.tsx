@@ -15,8 +15,7 @@ type InvoiceItem = {
   id: string;
   date: string;
   description: string;
-  qty: string;
-  rate: string;
+  total: string;
 };
 
 type MediaKind = "image" | "pdf" | "file";
@@ -25,11 +24,7 @@ type PreparedInvoiceItem = {
   id: string;
   dateLabel: string;
   description: string;
-  qtyNumber: number;
-  rateNumber: number;
   totalNumber: number;
-  qtyLabel: string;
-  rateLabel: string;
   amountLabel: string;
 };
 
@@ -39,7 +34,6 @@ type InvoiceDocumentData = {
   dueDate: string;
   terms: string;
   invoiceToLines: string[];
-  flatLabel: string;
   totalValue: number;
   totalLabel: string;
   items: PreparedInvoiceItem[];
@@ -126,13 +120,8 @@ function normalizeNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatQuantity(value: number) {
-  if (!Number.isFinite(value) || value === 0) return "0";
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
-}
-
 function getItemTotal(item: InvoiceItem) {
-  return normalizeNumber(item.qty) * normalizeNumber(item.rate);
+  return normalizeNumber(item.total);
 }
 
 function newInvoiceItem(date = toDateInputValue(new Date()), description = ""): InvoiceItem {
@@ -140,8 +129,7 @@ function newInvoiceItem(date = toDateInputValue(new Date()), description = ""): 
     id: `item-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     date,
     description,
-    qty: "",
-    rate: "",
+    total: "",
   };
 }
 
@@ -152,10 +140,10 @@ function buildInvoiceDocumentData(params: {
   flat: string[];
   items: InvoiceItem[];
   totalValue: number;
-  accountName: string;
-  sortCode: string;
-  accountNumber: string;
-  reference: string;
+  bankAccountName: string;
+  bankSortCode: string;
+  bankAccountNumber: string;
+  bankReference: string;
 }) {
   const fallbackDate = params.invoiceDate || toDateInputValue(new Date());
   const flatLabel = formatFlatLabels(params.flat);
@@ -163,28 +151,22 @@ function buildInvoiceDocumentData(params: {
   const invoiceToLines = toLines.length ? [...toLines, ...(params.flat.length ? [flatLabel] : [])] : [flatLabel];
 
   const items: PreparedInvoiceItem[] = params.items.map((item) => {
-    const qtyNumber = normalizeNumber(item.qty);
-    const rateNumber = normalizeNumber(item.rate);
-    const totalNumber = qtyNumber * rateNumber;
+    const totalNumber = normalizeNumber(item.total);
 
     return {
       id: item.id,
       dateLabel: formatDisplayDate(item.date || fallbackDate),
       description: item.description.trim(),
-      qtyNumber,
-      rateNumber,
       totalNumber,
-      qtyLabel: formatQuantity(qtyNumber),
-      rateLabel: formatCurrency(rateNumber),
       amountLabel: formatCurrency(totalNumber),
     };
   });
 
   const bankDetails = [
-    { label: "Account name", value: params.accountName.trim() || "—" },
-    { label: "Sort code", value: params.sortCode.trim() || "—" },
-    { label: "Account number", value: params.accountNumber.trim() || "—" },
-    { label: "Reference", value: params.reference.trim() || "—" },
+    { label: "Account name", value: params.bankAccountName.trim() || "-" },
+    { label: "Sort code", value: params.bankSortCode.trim() || "-" },
+    { label: "Account number", value: params.bankAccountNumber.trim() || "-" },
+    { label: "Reference", value: params.bankReference.trim() || "-" },
   ];
 
   const formattedDate = formatDisplayDate(fallbackDate);
@@ -195,7 +177,6 @@ function buildInvoiceDocumentData(params: {
     dueDate: formattedDate,
     terms: "Due on receipt",
     invoiceToLines,
-    flatLabel,
     totalValue: params.totalValue,
     totalLabel: formatCurrency(params.totalValue),
     items,
@@ -210,14 +191,13 @@ function buildPreviewHtml(params: {
   mediaFileName: string | null;
 }) {
   const { documentData, mediaPreviewUrl, mediaPreviewKind, mediaFileName } = params;
+
   const tableRows = documentData.items
     .map(
       (item) => `
         <tr>
           <td>${escapeHtml(item.dateLabel)}</td>
           <td>${item.description ? escapeHtml(item.description) : "&nbsp;"}</td>
-          <td class="num">${escapeHtml(item.qtyLabel)}</td>
-          <td class="num">${escapeHtml(item.rateLabel)}</td>
           <td class="num">${escapeHtml(item.amountLabel)}</td>
         </tr>
       `
@@ -235,7 +215,7 @@ function buildPreviewHtml(params: {
     )
     .join("");
 
-  const mediaMarkup =
+  const mediaBodyMarkup =
     mediaPreviewUrl && mediaPreviewKind === "image"
       ? `<img src="${escapeHtml(mediaPreviewUrl)}" alt="Invoice media" />`
       : mediaPreviewUrl && mediaPreviewKind === "pdf"
@@ -243,6 +223,11 @@ function buildPreviewHtml(params: {
         : mediaPreviewUrl
           ? `<div class="media-note">File attached<br />${escapeHtml(mediaFileName ?? "attachment")}</div>`
           : `<div class="media-placeholder">Media area<br />Attach image or PDF</div>`;
+
+  const mediaMarkup = `
+    <div class="media-title">Media</div>
+    <div class="media-body">${mediaBodyMarkup}</div>
+  `;
 
   const invoiceToMarkup = documentData.invoiceToLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
 
@@ -333,13 +318,15 @@ function buildPreviewHtml(params: {
     }
     .meta-value {
       display: block;
-      font-size: 11px;
-      font-weight: 700;
+      font-size: 12px;
+      font-weight: 600;
       line-height: 1.25;
+      width:100%;
+      overflow-wrap: anywhere;
     }
     .top-rule {
       height: 4px;
-      margin: 22px 0 22px;
+      margin: 22px 0;
       background: var(--accent);
     }
     table {
@@ -438,10 +425,26 @@ function buildPreviewHtml(params: {
       overflow-wrap: anywhere;
     }
     .media-box {
+      display: flex;
+      flex-direction: column;
+      background: #fbfdff;
+      overflow: hidden;
+    }
+    .media-title {
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      padding: 18px 18px 12px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    .media-body {
+      flex: 1;
       display: grid;
       place-items: center;
-      padding: 10px;
-      background: #fbfdff;
+      min-height: 148px;
+      padding: 0 10px 10px;
       overflow: hidden;
     }
     .media-box img,
@@ -498,18 +501,14 @@ function buildPreviewHtml(params: {
 
     <table>
       <colgroup>
-        <col style="width: 16%" />
-        <col style="width: 44%" />
-        <col style="width: 10%" />
-        <col style="width: 15%" />
-        <col style="width: 15%" />
+        <col style="width: 20%" />
+        <col style="width: 58%" />
+        <col style="width: 22%" />
       </colgroup>
       <thead>
         <tr>
           <th>Date</th>
           <th>Description</th>
-          <th class="num">Qty</th>
-          <th class="num">Rate</th>
           <th class="num">Amount</th>
         </tr>
       </thead>
@@ -537,15 +536,15 @@ function buildPreviewHtml(params: {
 </html>`;
 }
 
-export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, onCreated }: InvoiceModalProps) {
+export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, onClose, onCreated }: InvoiceModalProps) {
   const [invoiceDate, setInvoiceDate] = useState(() => toDateInputValue(new Date()));
   const [to, setTo] = useState("");
   const [flat, setFlat] = useState<string[]>([]);
   const [items, setItems] = useState<InvoiceItem[]>(() => [newInvoiceItem(toDateInputValue(new Date()), defaultDescription)]);
-  const [accountName, setAccountName] = useState("");
-  const [sortCode, setSortCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [reference, setReference] = useState("");
+  const [bankAccountName, setBankAccountName] = useState("");
+  const [bankSortCode, setBankSortCode] = useState("");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [bankReference, setBankReference] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
   const [mediaPreviewKind, setMediaPreviewKind] = useState<MediaKind>("file");
@@ -577,10 +576,10 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     setTo("");
     setFlat([]);
     setItems([newInvoiceItem(nextDate, defaultDescription)]);
-    setAccountName("");
-    setSortCode("");
-    setAccountNumber("");
-    setReference("");
+    setBankAccountName("");
+    setBankSortCode("");
+    setBankAccountNumber("");
+    setBankReference("");
     setMediaFile(null);
     setMediaPreviewUrl(null);
     setMediaPreviewKind("file");
@@ -616,12 +615,12 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
         flat,
         items,
         totalValue,
-        accountName,
-        sortCode,
-        accountNumber,
-        reference,
+        bankAccountName,
+        bankSortCode,
+        bankAccountNumber,
+        bankReference,
       }),
-    [accountName, accountNumber, flat, invoiceDate, invoiceNumber, items, reference, sortCode, to, totalValue]
+    [bankAccountName, bankAccountNumber, bankReference, bankSortCode, flat, invoiceDate, invoiceNumber, items, to, totalValue]
   );
 
   const previewHtml = useMemo(
@@ -736,16 +735,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     pdf.text(invoiceToLines, margin, y + 30);
 
     drawMetaBox(metaX, y, metaWidth, metaHeight, "Invoice", documentData.invoiceNumber);
-    drawSplitMetaBox(
-      metaX,
-      y + metaHeight + metaGap,
-      metaWidth,
-      splitHeight,
-      "Date",
-      documentData.issuedDate,
-      "Terms",
-      documentData.terms
-    );
+    drawSplitMetaBox(metaX, y + metaHeight + metaGap, metaWidth, splitHeight, "Date", documentData.issuedDate, "Terms", documentData.terms);
     drawMetaBox(metaX, y + metaHeight + metaGap + splitHeight + metaGap, metaWidth, metaHeight, "Due date", documentData.dueDate);
 
     const topBlockHeight = Math.max(invoiceToLines.length * 15 + 26, metaHeight + splitHeight + metaHeight + metaGap * 2);
@@ -757,8 +747,8 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     pdf.setLineWidth(1);
     y += 18;
 
-    const tableHeaders = ["DATE", "DESCRIPTION", "QTY", "RATE", "AMOUNT"];
-    const columnWidths = [78, 205, 48, 80, contentWidth - 78 - 205 - 48 - 80];
+    const tableHeaders = ["DATE", "DESCRIPTION", "AMOUNT"];
+    const columnWidths = [94, 288, contentWidth - 94 - 288];
     const headerHeight = 32;
     const rowLineHeight = 13;
 
@@ -772,7 +762,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
       pdf.setTextColor(255, 255, 255);
 
       tableHeaders.forEach((header, index) => {
-        const isNumeric = index >= 2;
+        const isNumeric = index === 2;
         pdf.text(header, isNumeric ? x + columnWidths[index] - 8 : x + 8, top + 20, {
           align: isNumeric ? "right" : "left",
         });
@@ -819,13 +809,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
       pdf.text(descriptionLines, x + 8, y + 18);
       x += columnWidths[1];
 
-      pdf.text(String(item.qtyLabel), x + columnWidths[2] - 8, y + 18, { align: "right" });
-      x += columnWidths[2];
-
-      pdf.text(String(item.rateLabel), x + columnWidths[3] - 8, y + 18, { align: "right" });
-      x += columnWidths[3];
-
-      pdf.text(String(item.amountLabel), x + columnWidths[4] - 8, y + 18, { align: "right" });
+      pdf.text(String(item.amountLabel), x + columnWidths[2] - 8, y + 18, { align: "right" });
       y += rowHeight;
     });
 
@@ -861,6 +845,7 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     const mediaBoxX = bankBoxX + boxWidth + boxGap;
 
     pdf.setFillColor(...panelColor);
+    pdf.setDrawColor(...lineColor);
     pdf.rect(bankBoxX, y, boxWidth, boxHeight, "FD");
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(9);
@@ -883,7 +868,16 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
       bankY += detailLines.length * 12 + 10;
     });
 
-    pdf.rect(mediaBoxX, y, boxWidth, boxHeight);
+    pdf.setFillColor(251, 253, 255);
+    pdf.setDrawColor(...lineColor);
+    pdf.rect(mediaBoxX, y, boxWidth, boxHeight, "FD");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...accentDark);
+    pdf.text("MEDIA", mediaBoxX + boxWidth / 2, y + 24, { align: "center" });
+
+    const mediaBodyTop = y + 40;
+    const mediaBodyHeight = boxHeight - 50;
 
     if (mediaPreviewUrl && mediaPreviewKind === "image") {
       const dataUrlMatch = /^data:(image\/[a-zA-Z0-9+.-]+);base64,/.exec(mediaPreviewUrl);
@@ -893,48 +887,48 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
       try {
         const properties = pdf.getImageProperties(mediaPreviewUrl);
         const availableWidth = boxWidth - 16;
-        const availableHeight = boxHeight - 16;
+        const availableHeight = mediaBodyHeight - 10;
         const widthRatio = availableWidth / properties.width;
         const heightRatio = availableHeight / properties.height;
         const ratio = Math.min(widthRatio, heightRatio);
         const renderWidth = properties.width * ratio;
         const renderHeight = properties.height * ratio;
         const imageX = mediaBoxX + (boxWidth - renderWidth) / 2;
-        const imageY = y + (boxHeight - renderHeight) / 2;
+        const imageY = mediaBodyTop + (mediaBodyHeight - renderHeight) / 2;
 
         pdf.addImage(mediaPreviewUrl, imageFormat, imageX, imageY, renderWidth, renderHeight, undefined, "FAST");
       } catch {
         pdf.setFont("helvetica", "bold");
         pdf.setFontSize(11);
         pdf.setTextColor(90, 103, 118);
-        pdf.text("Unable to render image", mediaBoxX + boxWidth / 2, y + boxHeight / 2 - 4, { align: "center" });
+        pdf.text("Unable to render image", mediaBoxX + boxWidth / 2, mediaBodyTop + mediaBodyHeight / 2 - 4, { align: "center" });
       }
     } else if (mediaFile && mediaPreviewKind === "pdf") {
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(11);
       pdf.setTextColor(90, 103, 118);
-      pdf.text("PDF attached", mediaBoxX + boxWidth / 2, y + boxHeight / 2 - 10, { align: "center" });
+      pdf.text("PDF attached", mediaBoxX + boxWidth / 2, mediaBodyTop + mediaBodyHeight / 2 - 10, { align: "center" });
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
       const fileNameLines = pdf.splitTextToSize(mediaFile.name, boxWidth - 24);
-      pdf.text(fileNameLines, mediaBoxX + boxWidth / 2, y + boxHeight / 2 + 12, { align: "center" });
+      pdf.text(fileNameLines, mediaBoxX + boxWidth / 2, mediaBodyTop + mediaBodyHeight / 2 + 12, { align: "center" });
     } else if (mediaFile) {
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(11);
       pdf.setTextColor(90, 103, 118);
-      pdf.text("File attached", mediaBoxX + boxWidth / 2, y + boxHeight / 2 - 10, { align: "center" });
+      pdf.text("File attached", mediaBoxX + boxWidth / 2, mediaBodyTop + mediaBodyHeight / 2 - 10, { align: "center" });
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
       const fileNameLines = pdf.splitTextToSize(mediaFile.name, boxWidth - 24);
-      pdf.text(fileNameLines, mediaBoxX + boxWidth / 2, y + boxHeight / 2 + 12, { align: "center" });
+      pdf.text(fileNameLines, mediaBoxX + boxWidth / 2, mediaBodyTop + mediaBodyHeight / 2 + 12, { align: "center" });
     } else {
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(11);
       pdf.setTextColor(90, 103, 118);
-      pdf.text("Media area", mediaBoxX + boxWidth / 2, y + boxHeight / 2 - 6, { align: "center" });
+      pdf.text("Media area", mediaBoxX + boxWidth / 2, mediaBodyTop + mediaBodyHeight / 2 - 6, { align: "center" });
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
-      pdf.text("Attach image or PDF", mediaBoxX + boxWidth / 2, y + boxHeight / 2 + 12, { align: "center" });
+      pdf.text("Attach image or PDF", mediaBoxX + boxWidth / 2, mediaBodyTop + mediaBodyHeight / 2 + 12, { align: "center" });
     }
 
     const fileName = `${safeFileName(
@@ -947,17 +941,15 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
     setError(null);
 
     const normalizedItems = items.map((item) => {
-      const qtyNumber = normalizeNumber(item.qty);
-      const rateNumber = normalizeNumber(item.rate);
+      const totalNumber = normalizeNumber(item.total);
 
       return {
         ...item,
         description: item.description.trim(),
-        qtyNumber,
-        rateNumber,
-        totalNumber: qtyNumber * rateNumber,
+        totalNumber,
       };
     });
+
     const normalizedInvoiceNumber = invoiceNumber.trim();
 
     if (!normalizedInvoiceNumber) {
@@ -970,12 +962,8 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
       return;
     }
 
-    if (
-      normalizedItems.length === 0 ||
-      totalValue <= 0 ||
-      normalizedItems.some((item) => item.qtyNumber <= 0 || item.rateNumber <= 0 || item.totalNumber <= 0)
-    ) {
-      setError("Enter valid quantity and rate for every invoice item.");
+    if (normalizedItems.length === 0 || totalValue <= 0 || normalizedItems.some((item) => item.totalNumber <= 0)) {
+      setError("Enter a valid total for every invoice item.");
       return;
     }
 
@@ -1084,38 +1072,38 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
                 <section className="grid gap-3">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="grid gap-1.5">
-                      <span className="oak-label">Account name</span>
+                      <span className="oak-label">Bank account name</span>
                       <input
                         className="oak-input !min-h-10 !px-3 !py-2"
-                        value={accountName}
-                        onChange={(event) => setAccountName(event.target.value)}
+                        value={bankAccountName}
+                        onChange={(event) => setBankAccountName(event.target.value)}
                       />
                     </label>
 
                     <label className="grid gap-1.5">
-                      <span className="oak-label">Sort code</span>
+                      <span className="oak-label">Bank sort code</span>
                       <input
                         className="oak-input !min-h-10 !px-3 !py-2"
-                        value={sortCode}
-                        onChange={(event) => setSortCode(event.target.value)}
+                        value={bankSortCode}
+                        onChange={(event) => setBankSortCode(event.target.value)}
                       />
                     </label>
 
                     <label className="grid gap-1.5">
-                      <span className="oak-label">Account number</span>
+                      <span className="oak-label">Bank account number</span>
                       <input
                         className="oak-input !min-h-10 !px-3 !py-2"
-                        value={accountNumber}
-                        onChange={(event) => setAccountNumber(event.target.value)}
+                        value={bankAccountNumber}
+                        onChange={(event) => setBankAccountNumber(event.target.value)}
                       />
                     </label>
 
                     <label className="grid gap-1.5">
-                      <span className="oak-label">Reference</span>
+                      <span className="oak-label">Bank reference</span>
                       <input
                         className="oak-input !min-h-10 !px-3 !py-2"
-                        value={reference}
-                        onChange={(event) => setReference(event.target.value)}
+                        value={bankReference}
+                        onChange={(event) => setBankReference(event.target.value)}
                       />
                     </label>
                   </div>
@@ -1131,80 +1119,52 @@ export function InvoiceModal({ open, sourceLabel, defaultDescription, onClose, o
                   </div>
 
                   <div className="grid gap-3">
-                    {items.map((item, index) => {
-                      const itemTotal = getItemTotal(item);
-
-                      return (
-                        <div className="grid gap-3 rounded-2xl border border-oak-border bg-white p-3" key={item.id}>
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-extrabold text-oak-coffee">Item {index + 1}</p>
-                            <button
-                              className="oak-button-secondary !min-h-8 !px-2"
-                              disabled={items.length === 1}
-                              type="button"
-                              onClick={() => removeItem(item.id)}
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-
-                          <label className="grid gap-1.5">
-                            <span className="oak-label">Date</span>
-                            <input
-                              className="oak-input !min-h-10 !px-3 !py-2"
-                              type="date"
-                              value={item.date}
-                              onChange={(event) => updateItem(item.id, { date: event.target.value })}
-                            />
-                          </label>
-
-                          <label className="grid gap-1.5">
-                            <span className="oak-label">Description</span>
-                            <textarea
-                              className="oak-input min-h-[96px] resize-y !px-3 !py-2"
-                              value={item.description}
-                              onChange={(event) => updateItem(item.id, { description: event.target.value })}
-                            />
-                          </label>
-
-                          <div className="grid gap-2 sm:grid-cols-3">
-                            <label className="grid gap-1.5">
-                              <span className="oak-label">Qty</span>
-                              <input
-                                className="oak-input !min-h-10 !px-3 !py-2"
-                                min="0"
-                                step="0.01"
-                                type="number"
-                                value={item.qty}
-                                onChange={(event) => updateItem(item.id, { qty: event.target.value })}
-                              />
-                            </label>
-
-                            <label className="grid gap-1.5">
-                              <span className="oak-label">Rate</span>
-                              <input
-                                className="oak-input !min-h-10 !px-3 !py-2"
-                                min="0"
-                                step="0.01"
-                                type="number"
-                                value={item.rate}
-                                onChange={(event) => updateItem(item.id, { rate: event.target.value })}
-                              />
-                            </label>
-
-                            <label className="grid gap-1.5">
-                              <span className="oak-label">Total</span>
-                              <input
-                                className="oak-input !min-h-10 !bg-oak-panel !px-3 !py-2"
-                                type="text"
-                                value={formatCurrency(itemTotal)}
-                                readOnly
-                              />
-                            </label>
-                          </div>
+                    {items.map((item, index) => (
+                      <div className="grid gap-3 rounded-2xl border border-oak-border bg-white p-3" key={item.id}>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-extrabold text-oak-coffee">Item {index + 1}</p>
+                          <button
+                            className="oak-button-secondary !min-h-8 !px-2"
+                            disabled={items.length === 1}
+                            type="button"
+                            onClick={() => removeItem(item.id)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
-                      );
-                    })}
+
+                        <label className="grid gap-1.5">
+                          <span className="oak-label">Date</span>
+                          <input
+                            className="oak-input !min-h-10 !px-3 !py-2"
+                            type="date"
+                            value={item.date}
+                            onChange={(event) => updateItem(item.id, { date: event.target.value })}
+                          />
+                        </label>
+
+                        <label className="grid gap-1.5">
+                          <span className="oak-label">Description</span>
+                          <textarea
+                            className="oak-input min-h-[96px] resize-y !px-3 !py-2"
+                            value={item.description}
+                            onChange={(event) => updateItem(item.id, { description: event.target.value })}
+                          />
+                        </label>
+
+                        <label className="grid gap-1.5">
+                          <span className="oak-label">Total</span>
+                          <input
+                            className="oak-input !min-h-10 !px-3 !py-2"
+                            min="0"
+                            step="0.01"
+                            type="number"
+                            value={item.total}
+                            onChange={(event) => updateItem(item.id, { total: event.target.value })}
+                          />
+                        </label>
+                      </div>
+                    ))}
                   </div>
 
                   <div className="rounded-2xl bg-oak-panel p-3 text-sm font-extrabold text-oak-coffee">

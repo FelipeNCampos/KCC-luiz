@@ -80,7 +80,7 @@ export function SidebarMenu() {
             <>
               <NavLink to="/cash-flow" className={navItemClass}>
                 <CircleDollarSign size={18} strokeWidth={2.1} />
-                <span>Cashflow</span>
+                <span> Cashflow penthouse</span>
               </NavLink>
               <NavLink to="/cash-flow-52" className={navItemClass}>
                 <CircleDollarSign size={18} strokeWidth={2.1} />

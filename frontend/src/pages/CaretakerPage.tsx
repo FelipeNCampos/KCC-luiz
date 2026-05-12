@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { FileText, Search, Settings2, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
-import { InvoiceModal } from "../components/InvoiceModal";
+import { InvoiceModalContractor } from "../components/InvoiceModalContractor";
 import { ContractorVisit, oakhillService } from "../services/oakhill";
 
 const GOAL_KEY_PREFIX = "oakhill-contractor-monthly-goal-hours-";
@@ -357,7 +357,7 @@ export function CaretakerPage() {
       ) : null}
 
       {isInvoiceOpen ? (
-        <InvoiceModal
+        <InvoiceModalContractor
           open={isInvoiceOpen}
           sourceLabel="Contractor"
           defaultDescription="Contractor service invoice"
