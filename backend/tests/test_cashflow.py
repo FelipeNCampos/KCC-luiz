@@ -204,6 +204,12 @@ def test_month_balance_starts_from_previous_month_closing_balance(client: TestCl
     assert february_response.json()["current_balance"] == "1800.00"
     assert [item["balance"] for item in february_response.json()["items"]] == ["1700.00", "1800.00"]
 
+    march_response = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-03"})
+    assert march_response.status_code == 200
+    assert march_response.json()["monthly_total"] == "0"
+    assert march_response.json()["current_balance"] == "1800.00"
+    assert march_response.json()["items"] == []
+
 
 def test_month_filter_search_and_month_total_behavior(client: TestClient) -> None:
     admin_token = get_admin_token(client)

@@ -92,7 +92,7 @@ const initialForm: FormState = {
   invoiceMedia: null
 };
 
-export function CashFlowPage({ title = "Cashflow", scope = "main", showFlat = true }: CashFlowPageProps = {}) {
+export function CashFlowPage({ title = "Petcash", scope = "main", showFlat = true }: CashFlowPageProps = {}) {
   const monthInputRef = useRef<HTMLInputElement | null>(null);
   const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
@@ -636,95 +636,103 @@ export function CashFlowPage({ title = "Cashflow", scope = "main", showFlat = tr
                     {error}
                   </td>
                 </tr>
-              ) : data && data.items.length > 0 ? (
+              ) : data ? (
                 <>
-                  {data.items.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="cursor-pointer bg-white transition-colors hover:bg-oak-surface"
-                      onClick={() => openTextEditor(row)}
-                    >
-                      <td className="px-4 py-3 text-sm font-bold text-oak-coffee">#{row.payment_number}</td>
-                      <td className="px-4 py-3 text-sm font-semibold text-oak-coffee">
-                        {row.has_invoice ? (
-                          <button
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-oak-border px-2.5 py-1.5 text-xs font-extrabold text-oak-coffee transition-colors hover:bg-oak-panel"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleOpenInvoiceEditor(row);
-                            }}
-                          >
-                            <Pencil size={14} />
-                            View / update
-                          </button>
-                        ) : (
-                          <button
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-oak-borderStrong px-2.5 py-1.5 text-xs font-extrabold text-oak-coffee transition-colors hover:bg-oak-panel"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleOpenInvoiceEditor(row);
-                            }}
-                          >
-                            <Plus size={14} />
-                            Add
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
-                      <td
-                        className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
+                  {data.items.length > 0 ? (
+                    data.items.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="cursor-pointer bg-white transition-colors hover:bg-oak-surface"
+                        onClick={() => openTextEditor(row)}
                       >
-                        {formatCurrency(row.amount)}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                        <button
-                          className="inline-flex max-w-72 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openTextEditor(row);
-                          }}
+                        <td className="px-4 py-3 text-sm font-bold text-oak-coffee">#{row.payment_number}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-oak-coffee">
+                          {row.has_invoice ? (
+                            <button
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-oak-border px-2.5 py-1.5 text-xs font-extrabold text-oak-coffee transition-colors hover:bg-oak-panel"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleOpenInvoiceEditor(row);
+                              }}
+                            >
+                              <Pencil size={14} />
+                              View / update
+                            </button>
+                          ) : (
+                            <button
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-oak-borderStrong px-2.5 py-1.5 text-xs font-extrabold text-oak-coffee transition-colors hover:bg-oak-panel"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleOpenInvoiceEditor(row);
+                              }}
+                            >
+                              <Plus size={14} />
+                              Add
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
+                        <td
+                          className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
                         >
-                          {row.description ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
-                          <span className="truncate">{row.description ?? "Add"}</span>
-                        </button>
-                      </td>
-                      {showFlat ? (
+                          {formatCurrency(row.amount)}
+                        </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/70">
                           <button
-                            className="inline-flex max-w-40 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
+                            className="inline-flex max-w-72 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
                               openTextEditor(row);
                             }}
                           >
-                            {row.flat ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
-                            <span className="truncate">{row.flat ?? "Add"}</span>
+                            {row.description ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
+                            <span className="truncate">{row.description ?? "Add"}</span>
                           </button>
                         </td>
-                      ) : null}
-                      <td
-                        className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.balance) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
-                      >
-                        {formatAbsoluteCurrency(row.balance)}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                        <button
-                          className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleDeleteRecord(row.id);
-                          }}
+                        {showFlat ? (
+                          <td className="px-4 py-3 text-sm font-semibold text-black/70">
+                            <button
+                              className="inline-flex max-w-40 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openTextEditor(row);
+                              }}
+                            >
+                              {row.flat ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
+                              <span className="truncate">{row.flat ?? "Add"}</span>
+                            </button>
+                          </td>
+                        ) : null}
+                        <td
+                          className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.balance) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
                         >
-                          Delete
-                        </button>
+                          {formatAbsoluteCurrency(row.balance)}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-black/70">
+                          <button
+                            className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleDeleteRecord(row.id);
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-4 py-8 text-sm font-semibold text-black/60" colSpan={tableColumnCount}>
+                        No records for this month.
                       </td>
                     </tr>
-                  ))}
+                  )}
                   <tr className="bg-oak-panel/70">
                     <td className="px-4 py-3" colSpan={summaryLeadingColumnSpan} />
                     <td className="bg-oak-panel px-4 py-3 text-sm font-extrabold uppercase tracking-[0.08em] text-oak-coffee">
@@ -738,13 +746,7 @@ export function CashFlowPage({ title = "Cashflow", scope = "main", showFlat = tr
                     <td className="bg-oak-panel px-4 py-3" />
                   </tr>
                 </>
-              ) : (
-                <tr>
-                  <td className="px-4 py-8 text-sm font-semibold text-black/60" colSpan={tableColumnCount}>
-                    No records for this month.
-                  </td>
-                </tr>
-              )}
+              ) : null}
             </tbody>
           </table>
         </div>
