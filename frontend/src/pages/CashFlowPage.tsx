@@ -92,7 +92,7 @@ const initialForm: FormState = {
   invoiceMedia: null
 };
 
-export function CashFlowPage({ title = "Petty Cash", scope = "main", showFlat = true }: CashFlowPageProps = {}) {
+export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = true }: CashFlowPageProps = {}) {
   const monthInputRef = useRef<HTMLInputElement | null>(null);
   const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
