@@ -367,7 +367,6 @@ class CashFlowService:
 
         summary_rows = [
             ["Opening Balance", CashFlowService._format_money(opening_balance)],
-            ["Period Balance", CashFlowService._format_money(listing.monthly_total)],
             ["Closing Balance", CashFlowService._format_money(closing_balance)],
         ]
         story.append(
