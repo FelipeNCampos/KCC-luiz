@@ -10,6 +10,7 @@ type FormState = {
   date: string;
   value: string;
   description: string;
+  supplier: string;
   flat: string;
   invoiceMedia: File | null;
 };
@@ -31,6 +32,7 @@ type TextEditorState = {
   record: CashFlowRow;
   value: string;
   description: string;
+  supplier: string;
   flat: string;
   error: string | null;
 };
@@ -88,6 +90,7 @@ const initialForm: FormState = {
   date: toDateInputValue(new Date()),
   value: "",
   description: "",
+  supplier: "",
   flat: "",
   invoiceMedia: null
 };
@@ -122,9 +125,9 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
   const [savingText, setSavingText] = useState(false);
   const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
-  const tableColumnCount = showFlat ? 8 : 7;
-  const tableMinWidthClass = showFlat ? "min-w-[980px]" : "min-w-[860px]";
-  const summaryLeadingColumnSpan = showFlat ? 5 : 4;
+  const tableColumnCount = showFlat ? 9 : 8;
+  const tableMinWidthClass = showFlat ? "min-w-[1120px]" : "min-w-[980px]";
+  const summaryLeadingColumnSpan = showFlat ? 6 : 5;
 
   useEffect(() => {
     let active = true;
@@ -273,6 +276,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
         date: form.date,
         value: form.value,
         description: form.description,
+        supplier: form.supplier,
         flat: showFlat ? form.flat : undefined,
         invoiceMedia: form.invoiceMedia
       });
@@ -473,6 +477,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       record: row,
       value: row.amount,
       description: row.description ?? "",
+      supplier: row.supplier ?? "",
       flat: normalizeFlatValue(row.flat),
       error: null
     });
@@ -497,6 +502,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       await cashFlowService.update(textEditor.record.id, {
         value: textEditor.value,
         description: textEditor.description.trim() || null,
+        supplier: textEditor.supplier.trim() || null,
         flat: showFlat ? textEditor.flat.trim() || null : null
       });
       setTextEditor(null);
@@ -560,7 +566,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-oak-taupe" />
             <input
               className="oak-input pl-9"
-              placeholder={showFlat ? "Search by Description or Flat" : "Search by Description"}
+              placeholder={showFlat ? "Search by Description, Supplier or Flat" : "Search by Description or Supplier"}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -617,6 +623,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 <th className="px-4 py-3 font-extrabold">Date</th>
                 <th className="px-4 py-3 font-extrabold text-right">Amount</th>
                 <th className="px-4 py-3 font-extrabold">Comments</th>
+                <th className="px-4 py-3 font-extrabold">Supplier</th>
                 {showFlat ? <th className="px-4 py-3 font-extrabold">Flat</th> : null}
                 <th className="px-4 py-3 font-extrabold text-right">Balance</th>
                 <th className="px-4 py-3 font-extrabold">Action</th>
@@ -690,6 +697,19 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                           >
                             {row.description ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
                             <span className="truncate">{row.description ?? "Add"}</span>
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-black/70">
+                          <button
+                            className="inline-flex max-w-56 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openTextEditor(row);
+                            }}
+                          >
+                            {row.supplier ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
+                            <span className="truncate">{row.supplier ?? "Add"}</span>
                           </button>
                         </td>
                         {showFlat ? (
@@ -793,13 +813,24 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 </label>
               </div>
 
-              <div className={`grid gap-4 ${showFlat ? "sm:grid-cols-2" : ""}`}>
+              <div className={`grid gap-4 ${showFlat ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
                 <label className="grid gap-2">
                   <span className="oak-label">Description</span>
                   <input
                     className="oak-input"
+                    maxLength={255}
                     value={form.description}
                     onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+                  />
+                </label>
+
+                <label className="grid gap-2">
+                  <span className="oak-label">Supplier</span>
+                  <input
+                    className="oak-input"
+                    maxLength={255}
+                    value={form.supplier}
+                    onChange={(event) => setForm((prev) => ({ ...prev, supplier: event.target.value }))}
                   />
                 </label>
 
@@ -1001,6 +1032,16 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                   maxLength={255}
                   value={textEditor.description}
                   onChange={(event) => setTextEditor((current) => (current ? { ...current, description: event.target.value, error: null } : current))}
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="oak-label">Supplier</span>
+                <input
+                  className="oak-input"
+                  maxLength={255}
+                  value={textEditor.supplier}
+                  onChange={(event) => setTextEditor((current) => (current ? { ...current, supplier: event.target.value, error: null } : current))}
                 />
               </label>
 

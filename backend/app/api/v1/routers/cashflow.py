@@ -64,7 +64,7 @@ def list_cashflow_records(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_roles("admin", "manager"))],
     month: Annotated[str | None, Query(description="Month in format YYYY-MM")] = None,
-    search: Annotated[str | None, Query(description="Search by description or flat")] = None,
+    search: Annotated[str | None, Query(description="Search by description, supplier or flat")] = None,
     scope: Annotated[str | None, Query(description="Cashflow scope")] = None,
 ) -> CashFlowListResponse:
     service = CashFlowService(CashFlowRepository(db))
@@ -88,6 +88,7 @@ async def create_cashflow_record(
     record_date: Annotated[str, Form(alias="date")],
     value: Annotated[Decimal, Form(alias="value")],
     description: Annotated[str | None, Form(alias="description")] = None,
+    supplier: Annotated[str | None, Form(alias="supplier")] = None,
     flat: Annotated[str | None, Form(alias="flat")] = None,
     scope: Annotated[str | None, Form(alias="scope")] = None,
     invoice_media: Annotated[UploadFile | None, File(alias="invoice_media")] = None,
@@ -119,6 +120,7 @@ async def create_cashflow_record(
         record_date=record_date,
         value=value,
         description=description,
+        supplier=supplier,
         flat=flat,
         scope=scope,
     )

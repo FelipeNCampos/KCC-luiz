@@ -50,11 +50,8 @@ class CashFlowService:
         invoice_media_mime: str | None = None,
         invoice_media_data: bytes | None = None,
     ) -> CashFlowRecord:
-        description = (
-            payload.description.strip()
-            if payload.description and payload.description.strip()
-            else None
-        )
+        description = self._clean_optional_text(payload.description)
+        supplier = self._clean_optional_text(payload.supplier)
         cashflow_scope = self._normalize_scope(payload.scope)
         flat = (
             payload.flat.strip()
@@ -72,6 +69,7 @@ class CashFlowService:
             record_date=payload.record_date,
             amount=payload.value,
             description=description,
+            supplier=supplier,
             flat=flat,
             created_by_user_id=user_id,
         )
@@ -111,11 +109,13 @@ class CashFlowService:
             running_balance += record.amount
 
             description = record.description or ""
+            supplier = record.supplier or ""
             flat = record.flat or ""
             matches_description = query in description.lower()
+            matches_supplier = query in supplier.lower()
             matches_flat = include_flat and query in flat.lower()
 
-            if query and not matches_description and not matches_flat:
+            if query and not matches_description and not matches_supplier and not matches_flat:
                 continue
 
             items.append(
@@ -127,6 +127,7 @@ class CashFlowService:
                     record_date=record.record_date,
                     amount=record.amount,
                     description=record.description,
+                    supplier=record.supplier,
                     flat=record.flat,
                     balance=running_balance,
                     created_by_user_id=record.created_by_user_id,
@@ -160,6 +161,8 @@ class CashFlowService:
 
         if "description" in payload.model_fields_set:
             record.description = self._clean_optional_text(payload.description)
+        if "supplier" in payload.model_fields_set:
+            record.supplier = self._clean_optional_text(payload.supplier)
         if "flat" in payload.model_fields_set:
             record.flat = (
                 self._clean_optional_text(payload.flat)
@@ -367,6 +370,7 @@ class CashFlowService:
 
         summary_rows = [
             ["Opening Balance", CashFlowService._format_money(opening_balance)],
+            ["Period Balance", CashFlowService._format_money(listing.monthly_total)],
             ["Closing Balance", CashFlowService._format_money(closing_balance)],
         ]
         story.append(
@@ -375,7 +379,7 @@ class CashFlowService:
         story.append(Spacer(1, 12))
 
         if include_flat_fields:
-            rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Flat", "Balance"]]
+            rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Supplier", "Flat", "Balance"]]
             rows.extend(
                 [
                     [
@@ -384,6 +388,7 @@ class CashFlowService:
                         CashFlowService._format_date(item.record_date),
                         CashFlowService._format_money(item.amount),
                         item.description or "",
+                        item.supplier or "",
                         item.flat or "",
                         CashFlowService._format_money(item.balance),
                     ]
@@ -391,10 +396,10 @@ class CashFlowService:
                 ]
             )
             if len(rows) == 1:
-                rows.append(["-", "-", "-", "-", "No records for this period.", "-", "-"])
-            record_widths = [18 * mm, 18 * mm, 23 * mm, 25 * mm, 50 * mm, 18 * mm, 25 * mm]
+                rows.append(["-", "-", "-", "-", "No records for this period.", "-", "-", "-"])
+            record_widths = [16 * mm, 16 * mm, 20 * mm, 22 * mm, 38 * mm, 34 * mm, 16 * mm, 21 * mm]
         else:
-            rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Balance"]]
+            rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Supplier", "Balance"]]
             rows.extend(
                 [
                     [
@@ -403,14 +408,15 @@ class CashFlowService:
                         CashFlowService._format_date(item.record_date),
                         CashFlowService._format_money(item.amount),
                         item.description or "",
+                        item.supplier or "",
                         CashFlowService._format_money(item.balance),
                     ]
                     for item in listing.items
                 ]
             )
             if len(rows) == 1:
-                rows.append(["-", "-", "-", "-", "No records for this period.", "-"])
-            record_widths = [20 * mm, 20 * mm, 24 * mm, 28 * mm, 63 * mm, 25 * mm]
+                rows.append(["-", "-", "-", "-", "No records for this period.", "-", "-"])
+            record_widths = [18 * mm, 18 * mm, 22 * mm, 24 * mm, 48 * mm, 32 * mm, 22 * mm]
         story.append(
             CashFlowService._styled_table(
                 rows,
@@ -422,7 +428,7 @@ class CashFlowService:
             story.append(Spacer(1, 14))
             story.append(Paragraph("Invoices", styles["Heading2"]))
             if include_flat_fields:
-                invoice_rows = [["Payment #", "Date", "File", "Comments", "Flat"]]
+                invoice_rows = [["Payment #", "Date", "File", "Comments", "Supplier", "Flat"]]
                 invoice_rows.extend(
                     [
                         [
@@ -430,6 +436,7 @@ class CashFlowService:
                             CashFlowService._format_date(item.record_date),
                             item.invoice_media_name or "invoice",
                             item.description or "",
+                            item.supplier or "",
                             item.flat or "",
                         ]
                         for item in listing.items
@@ -437,10 +444,10 @@ class CashFlowService:
                     ]
                 )
                 if len(invoice_rows) == 1:
-                    invoice_rows.append(["-", "-", "No invoice media in this period.", "-", "-"])
-                invoice_widths = [22 * mm, 25 * mm, 45 * mm, 62 * mm, 23 * mm]
+                    invoice_rows.append(["-", "-", "No invoice media in this period.", "-", "-", "-"])
+                invoice_widths = [20 * mm, 22 * mm, 34 * mm, 42 * mm, 38 * mm, 18 * mm]
             else:
-                invoice_rows = [["Payment #", "Date", "File", "Comments"]]
+                invoice_rows = [["Payment #", "Date", "File", "Comments", "Supplier"]]
                 invoice_rows.extend(
                     [
                         [
@@ -448,14 +455,15 @@ class CashFlowService:
                             CashFlowService._format_date(item.record_date),
                             item.invoice_media_name or "invoice",
                             item.description or "",
+                            item.supplier or "",
                         ]
                         for item in listing.items
                         if item.has_invoice
                     ]
                 )
                 if len(invoice_rows) == 1:
-                    invoice_rows.append(["-", "-", "No invoice media in this period.", "-"])
-                invoice_widths = [25 * mm, 28 * mm, 55 * mm, 72 * mm]
+                    invoice_rows.append(["-", "-", "No invoice media in this period.", "-", "-"])
+                invoice_widths = [22 * mm, 24 * mm, 36 * mm, 52 * mm, 42 * mm]
             story.append(
                 CashFlowService._styled_table(
                     invoice_rows,

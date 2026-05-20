@@ -72,6 +72,7 @@ def test_create_record_increment_and_sign_rules(client: TestClient) -> None:
     assert income_response.json()["payment_number"] == 1
     assert income_response.json()["amount"] == "150.00"
     assert income_response.json()["description"] is None
+    assert income_response.json()["supplier"] is None
     assert income_response.json()["flat"] is None
 
     outcome_response = client.post(
@@ -82,12 +83,14 @@ def test_create_record_increment_and_sign_rules(client: TestClient) -> None:
             "date": "2026-04-15",
             "value": "-40.00",
             "description": "Maintenance",
+            "supplier": "Tool Shop",
             "flat": "A101",
         },
     )
     assert outcome_response.status_code == 201
     assert outcome_response.json()["payment_number"] == 2
     assert outcome_response.json()["amount"] == "-40.00"
+    assert outcome_response.json()["supplier"] == "Tool Shop"
 
     list_response = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-04"})
     assert list_response.status_code == 200
@@ -221,6 +224,7 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
             "date": "2026-04-01",
             "value": "200.00",
             "description": "Rent A101",
+            "supplier": "Tenant A101",
             "flat": "A101",
         },
         {
@@ -228,6 +232,7 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
             "date": "2026-04-20",
             "value": "-50.00",
             "description": "Repair A101",
+            "supplier": "Oak Maintenance",
             "flat": "A101",
         },
         {
@@ -235,6 +240,7 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
             "date": "2026-05-02",
             "value": "300.00",
             "description": "Rent B202",
+            "supplier": "Tenant B202",
             "flat": "B202",
         },
     ]
@@ -258,6 +264,14 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     assert april_search.json()["monthly_total"] == "150.00"
     assert april_search.json()["current_balance"] == "150.00"
 
+    supplier_search = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"month": "2026-04", "search": "maintenance"},
+    )
+    assert supplier_search.status_code == 200
+    assert [item["supplier"] for item in supplier_search.json()["items"]] == ["Oak Maintenance"]
+
 
 def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClient) -> None:
     admin_token = get_admin_token(client, email="cashflow-52-admin@example.com")
@@ -271,6 +285,7 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
             "date": "2026-04-01",
             "value": "100.00",
             "description": "Main cashflow",
+            "supplier": "Main supplier",
             "flat": "Flat 50",
         },
     )
@@ -285,11 +300,13 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
             "date": "2026-04-02",
             "value": "25.00",
             "description": "Cashflow 52 record",
+            "supplier": "Supplier 52",
             "flat": "Should not be stored",
         },
     )
     assert scoped_response.status_code == 201
     assert scoped_response.json()["payment_number"] == 1
+    assert scoped_response.json()["supplier"] == "Supplier 52"
     assert scoped_response.json()["flat"] is None
 
     main_list = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-04"})
@@ -307,6 +324,7 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
     assert [item["description"] for item in scoped_list.json()["items"]] == [
         "Cashflow 52 record"
     ]
+    assert scoped_list.json()["items"][0]["supplier"] == "Supplier 52"
     assert scoped_list.json()["items"][0]["flat"] is None
 
     scoped_flat_search = client.get(
@@ -317,6 +335,14 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
     assert scoped_flat_search.status_code == 200
     assert scoped_flat_search.json()["monthly_total"] == "25.00"
     assert scoped_flat_search.json()["items"] == []
+
+    scoped_supplier_search = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"month": "2026-04", "scope": "cashflow52", "search": "supplier 52"},
+    )
+    assert scoped_supplier_search.status_code == 200
+    assert len(scoped_supplier_search.json()["items"]) == 1
 
     preview_response = client.post(
         "/api/v1/cashflow/report/preview",
@@ -331,6 +357,7 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
     assert preview_response.status_code == 200
     preview_text = PdfReader(BytesIO(preview_response.content)).pages[0].extract_text()
     assert "Cashflow 52 Report" in preview_text
+    assert "Supplier 52" in preview_text
     assert "Flat" not in preview_text
 
 
@@ -419,16 +446,18 @@ def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> No
     record = create_response.json()
     assert record["has_invoice"] is False
     assert record["description"] is None
+    assert record["supplier"] is None
     assert record["flat"] is None
 
     update_response = client.patch(
         f"/api/v1/cashflow/{record['id']}",
         headers=headers,
-        json={"value": "125.00", "description": "Updated comment", "flat": "F505"},
+        json={"value": "125.00", "description": "Updated comment", "supplier": "Updated supplier", "flat": "F505"},
     )
     assert update_response.status_code == 200
     assert update_response.json()["amount"] == "125.00"
     assert update_response.json()["description"] == "Updated comment"
+    assert update_response.json()["supplier"] == "Updated supplier"
     assert update_response.json()["flat"] == "F505"
     assert update_response.json()["balance"] == "125.00"
 
@@ -492,6 +521,7 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
             "date": "2026-03-20",
             "value": "300.00",
             "description": "Carry over",
+            "supplier": "Opening tenant",
             "flat": "A101",
         },
     )
@@ -505,6 +535,7 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
             "date": "2026-04-12",
             "value": "120.00",
             "description": "Monthly fee",
+            "supplier": "April tenant",
             "flat": "A101",
         },
         files={
@@ -525,6 +556,7 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
             "date": "2026-05-02",
             "value": "80.00",
             "description": "May fee",
+            "supplier": "May tenant",
             "flat": "B202",
         },
     )
@@ -599,6 +631,8 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
     assert "12-04-2026" in first_page_text
     assert "02-05-2026" in first_page_text
     assert "Monthly fee" in first_page_text
+    assert "April tenant" in first_page_text
     assert "May fee" in first_page_text
+    assert "May tenant" in first_page_text
     assert "Invoices" in first_page_text
     assert "invoice.pdf" in first_page_text

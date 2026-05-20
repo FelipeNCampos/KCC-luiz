@@ -10,6 +10,7 @@ export type CashFlowRow = {
   record_date: string;
   amount: string;
   description: string | null;
+  supplier: string | null;
   flat: string | null;
   balance: string;
   created_by_user_id: number;
@@ -33,6 +34,7 @@ export type CreateCashFlowPayload = {
   date: string;
   value: string;
   description?: string;
+  supplier?: string;
   flat?: string;
   invoiceMedia?: File | null;
 };
@@ -40,6 +42,7 @@ export type CreateCashFlowPayload = {
 export type UpdateCashFlowPayload = {
   value?: string | null;
   description?: string | null;
+  supplier?: string | null;
   flat?: string | null;
 };
 
@@ -81,6 +84,10 @@ export const cashFlowService = {
 
     if (payload.description && payload.description.trim()) {
       formData.append("description", payload.description);
+    }
+
+    if (payload.supplier && payload.supplier.trim()) {
+      formData.append("supplier", payload.supplier);
     }
 
     if (payload.flat && payload.flat.trim()) {

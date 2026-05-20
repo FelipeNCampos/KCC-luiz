@@ -10,6 +10,7 @@ class CashFlowCreate(BaseModel):
     record_date: date
     value: Decimal
     description: str | None = Field(default=None, max_length=255)
+    supplier: str | None = Field(default=None, max_length=255)
     flat: str | None = Field(default=None, max_length=120)
 
     @field_validator("value")
@@ -23,6 +24,7 @@ class CashFlowCreate(BaseModel):
 class CashFlowUpdate(BaseModel):
     value: Decimal | None = None
     description: str | None = Field(default=None, max_length=255)
+    supplier: str | None = Field(default=None, max_length=255)
     flat: str | None = Field(default=None, max_length=120)
 
     @field_validator("value")
@@ -43,6 +45,7 @@ class CashFlowRow(BaseModel):
     record_date: date
     amount: Decimal
     description: str | None
+    supplier: str | None
     flat: str | None
     balance: Decimal
     created_by_user_id: int
