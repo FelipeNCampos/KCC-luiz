@@ -241,11 +241,12 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     return current - (current - monthly);
   }, [data?.current_balance, data?.monthly_total]);
   const thisMonth = useMemo(() => formatCurrency(thisMonthValue), [thisMonthValue]);
-  const openingBalance = useMemo(() => {
+  const openingBalanceValue = useMemo(() => {
     const current = Number(data?.current_balance ?? 0);
     const monthly = Number(data?.monthly_total ?? 0);
-    return formatCurrency(current - monthly);
+    return current - monthly;
   }, [data?.current_balance, data?.monthly_total]);
+  const openingBalance = useMemo(() => formatCurrency(openingBalanceValue), [openingBalanceValue]);
 
   async function reload() {
     const response = await cashFlowService.list({ month, search, scope });
@@ -580,11 +581,11 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
           <div className="grid overflow-hidden rounded-xl border border-oak-border bg-oak-panel sm:grid-cols-2">
             <div className="p-4 text-center sm:border-r sm:border-oak-border">
               <p className="oak-label">Last Month</p>
-              <p className="mt-2 text-2xl font-extrabold text-oak-coffee">{openingBalance}</p>
+              <p className={`mt-2 text-2xl font-extrabold ${openingBalanceValue >= 0 ? "text-oak-coffee" : "text-[#cf0e0e]"}`}>{openingBalance}</p>
             </div>
             <div className="p-4 text-center">
               <p className="oak-label">This Month</p>
-              <p className={`mt-2 text-2xl font-extrabold ${thisMonthValue >= 0 ? "text-emerald-700" : "text-oak-danger"}`}>
+              <p className={`mt-2 text-2xl font-extrabold ${thisMonthValue >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}>
                 {thisMonth}
               </p>
             </div>
@@ -728,7 +729,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                           </td>
                         ) : null}
                         <td
-                          className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.balance) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
+                          className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.balance) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
                         >
                           {formatAbsoluteCurrency(row.balance)}
                         </td>
@@ -759,7 +760,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                       Total:
                     </td>
                     <td
-                      className={`px-4 py-3 text-right text-sm font-extrabold ${Number(data.current_balance) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
+                      className={`px-4 py-3 text-right text-sm font-extrabold ${Number(data.current_balance) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
                     >
                       {currentBalance}
                     </td>
