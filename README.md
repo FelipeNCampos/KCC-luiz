@@ -172,6 +172,23 @@ Menos mensagens perdidas.
 Menos retrabalho.  
 Mais controle, mais velocidade e mais profissionalismo.
 
+## Desenvolvimento Local Com Docker
+
+Para subir o ambiente local sem Traefik:
+
+```bash
+docker compose up --build
+```
+
+Portas padrao do ambiente de desenvolvimento:
+
+- `http://localhost:18080` para acessar a aplicacao pelo Nginx local.
+- `http://localhost:15173` para acessar o frontend Vite diretamente.
+- `http://localhost:18000` para acessar o backend diretamente.
+- `localhost:55432` para o PostgreSQL.
+
+O arquivo `docker-compose.yml` foi configurado para desenvolvimento local e nao depende da rede externa `traefik-public`. O arquivo `docker-compose.traefik.yml` continua sendo um override opcional para cenarios onde ja existe um Traefik rodando.
+
 ## Resumo Comercial
 
 O KCC Flats Control entrega uma operacao mais organizada, rastreavel e facil de vender para proprietarios, moradores e administradores.

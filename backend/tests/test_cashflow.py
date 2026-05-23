@@ -410,6 +410,7 @@ def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
         headers=headers,
         data={
             "invoice": "Yes",
+            "invoice_number": "INV-2026-0042",
             "date": "2026-04-12",
             "value": "90.00",
             "description": "Invoice record",
@@ -421,6 +422,7 @@ def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
 
     record = create_response.json()
     assert record["has_invoice"] is True
+    assert record["invoice_number"] == "INV-2026-0042"
     assert record["invoice_media_name"] == "invoice.pdf"
 
     invoice_response = client.get(f"/api/v1/cashflow/{record['id']}/invoice", headers=headers)
@@ -471,16 +473,26 @@ def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> No
     invoice_response = client.patch(
         f"/api/v1/cashflow/{record['id']}/invoice",
         headers=headers,
+        data={"invoice_number": "INV-900"},
         files={"invoice_media": ("receipt.png", b"fake-image", "image/png")},
     )
     assert invoice_response.status_code == 200
     assert invoice_response.json()["has_invoice"] is True
+    assert invoice_response.json()["invoice_number"] == "INV-900"
     assert invoice_response.json()["invoice_media_name"] == "receipt.png"
 
     media_response = client.get(f"/api/v1/cashflow/{record['id']}/invoice", headers=headers)
     assert media_response.status_code == 200
     assert media_response.headers["content-type"] == "image/png"
     assert media_response.content == b"fake-image"
+
+    invoice_number_only_response = client.patch(
+        f"/api/v1/cashflow/{record['id']}/invoice",
+        headers=headers,
+        data={"invoice_number": "INV-901"},
+    )
+    assert invoice_number_only_response.status_code == 200
+    assert invoice_number_only_response.json()["invoice_number"] == "INV-901"
 
 
 def test_delete_record(client: TestClient) -> None:
@@ -532,6 +544,7 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
         headers=headers,
         data={
             "invoice": "Yes",
+            "invoice_number": "INV-APR-2026",
             "date": "2026-04-12",
             "value": "120.00",
             "description": "Monthly fee",
@@ -636,3 +649,6 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
     assert "May tenant" in first_page_text
     assert "Invoices" in first_page_text
     assert "invoice.pdf" in first_page_text
+
+    second_page_text = reader.pages[1].extract_text()
+    assert "Invoice: INV-APR-2026" in second_page_text

@@ -7,6 +7,7 @@ import { cashFlowService, CashFlowListResponse, CashFlowRow, CashFlowScope } fro
 
 type FormState = {
   invoice: "Yes" | "No";
+  invoiceNumber: string;
   date: string;
   value: string;
   description: string;
@@ -23,6 +24,7 @@ type PreviewState = {
 
 type InvoiceEditorState = {
   record: CashFlowRow;
+  invoiceNumber: string;
   preview: PreviewState | null;
   selectedFile: File | null;
   error: string | null;
@@ -87,6 +89,7 @@ function normalizeFlatValue(value: string | null | undefined) {
 
 const initialForm: FormState = {
   invoice: "No",
+  invoiceNumber: "",
   date: toDateInputValue(new Date()),
   value: "",
   description: "",
@@ -270,10 +273,11 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
 
     setSaving(true);
     try {
-      const invoice = form.invoiceMedia ? "Yes" : "No";
+      const invoice = form.invoiceMedia || form.invoiceNumber.trim() ? "Yes" : "No";
       await cashFlowService.create({
         scope,
         invoice,
+        invoiceNumber: form.invoiceNumber.trim() || undefined,
         date: form.date,
         value: form.value,
         description: form.description,
@@ -314,11 +318,28 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     setFeedback(null);
 
     if (!row.has_invoice) {
-      setInvoiceEditor({ record: row, preview: null, selectedFile: null, error: null });
+      setInvoiceEditor({
+        record: row,
+        invoiceNumber: row.invoice_number ?? "",
+        preview: null,
+        selectedFile: null,
+        error: null
+      });
       return;
     }
 
     try {
+      if (!row.invoice_media_name) {
+        setInvoiceEditor({
+          record: row,
+          invoiceNumber: row.invoice_number ?? "",
+          preview: null,
+          selectedFile: null,
+          error: null
+        });
+        return;
+      }
+
       const media = await cashFlowService.getInvoiceMedia(row.id);
       const objectUrl = URL.createObjectURL(media.blob);
       if (invoiceEditor?.preview) {
@@ -326,6 +347,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       }
       setInvoiceEditor({
         record: row,
+        invoiceNumber: row.invoice_number ?? "",
         preview: {
           url: objectUrl,
           contentType: media.contentType ?? "application/octet-stream",
@@ -335,8 +357,13 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
         error: null
       });
     } catch (requestError) {
-      const axiosError = requestError as AxiosError<{ detail?: string }>;
-      setFeedback({ type: "error", message: axiosError.response?.data?.detail ?? "Unable to load invoice media." });
+      setInvoiceEditor({
+        record: row,
+        invoiceNumber: row.invoice_number ?? "",
+        preview: null,
+        selectedFile: null,
+        error: null
+      });
     }
   }
 
@@ -451,16 +478,19 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   }
 
   async function handleSaveInvoice() {
-    if (!invoiceEditor?.selectedFile) {
-      setInvoiceEditor((current) => (current ? { ...current, error: "Select an image or PDF first." } : current));
+    if (!invoiceEditor?.selectedFile && !invoiceEditor?.invoiceNumber.trim()) {
+      setInvoiceEditor((current) => (current ? { ...current, error: "Add an invoice number or select an image or PDF first." } : current));
       return;
     }
 
     setSavingInvoice(true);
     try {
-      await cashFlowService.updateInvoiceMedia(invoiceEditor.record.id, invoiceEditor.selectedFile);
+      await cashFlowService.updateInvoiceMedia(invoiceEditor.record.id, {
+        invoiceMedia: invoiceEditor.selectedFile,
+        invoiceNumber: invoiceEditor.invoiceNumber.trim()
+      });
       closeInvoiceEditor();
-      setFeedback({ type: "success", message: "Invoice media updated successfully." });
+      setFeedback({ type: "success", message: "Invoice updated successfully." });
       await reload();
     } catch (requestError) {
       const axiosError = requestError as AxiosError<{ detail?: string }>;
@@ -847,8 +877,15 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 ) : null}
               </div>
 
-              <label className="grid gap-2">
+              <div className="grid gap-2">
                 <span className="oak-label">Invoice media</span>
+                <input
+                  className="oak-input"
+                  maxLength={120}
+                  placeholder="Invoice number"
+                  value={form.invoiceNumber}
+                  onChange={(event) => setForm((prev) => ({ ...prev, invoiceNumber: event.target.value }))}
+                />
                 <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-oak-borderStrong bg-oak-surface px-3.5 py-2.5 text-sm font-semibold text-oak-coffee">
                   <Upload size={16} />
                   <span>{form.invoiceMedia?.name ?? "Upload image or PDF"}</span>
@@ -874,7 +911,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                     )}
                   </div>
                 ) : null}
-              </label>
+              </div>
 
               {formError ? <p className="text-sm font-bold text-oak-danger">{formError}</p> : null}
 
@@ -1100,6 +1137,18 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
             </header>
 
             <div className="grid gap-4 p-4">
+              <label className="grid gap-2">
+                <span className="oak-label">Invoice number</span>
+                <input
+                  className="oak-input"
+                  maxLength={120}
+                  value={invoiceEditor.invoiceNumber}
+                  onChange={(event) =>
+                    setInvoiceEditor((current) => (current ? { ...current, invoiceNumber: event.target.value, error: null } : current))
+                  }
+                />
+              </label>
+
               <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-oak-borderStrong bg-oak-surface px-3.5 py-2.5 text-sm font-semibold text-oak-coffee">
                 <Upload size={16} />
                 <span>{invoiceEditor.selectedFile?.name ?? (invoiceEditor.record.has_invoice ? "Replace image or PDF" : "Add image or PDF")}</span>
@@ -1146,7 +1195,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 </button>
               ) : null}
               <button className="oak-button-primary" type="button" onClick={() => void handleSaveInvoice()} disabled={savingInvoice}>
-                {savingInvoice ? "Saving..." : invoiceEditor.record.has_invoice ? "Update media" : "Add media"}
+                {savingInvoice ? "Saving..." : invoiceEditor.record.has_invoice ? "Update invoice" : "Add invoice"}
               </button>
             </footer>
           </article>

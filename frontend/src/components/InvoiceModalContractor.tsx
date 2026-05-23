@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Plus, Trash2, Upload, X } from "lucide-react";
 
 import { cashFlowService } from "../services/cashflow";
+import { renderPdfFirstPageToDataUrl } from "../utils/pdfPreview";
 
 type InvoiceModalProps = {
   open: boolean;
@@ -10,6 +11,8 @@ type InvoiceModalProps = {
   onClose: () => void;
   onCreated?: (message: string) => void;
 };
+
+type InvoicePricingMode = "per_item" | "invoice_total";
 
 type InvoiceItem = {
   id: string;
@@ -30,6 +33,8 @@ type PreparedInvoiceItem = {
 
 type InvoiceDocumentData = {
   invoiceNumber: string;
+  accountName: string;
+  pricingMode: InvoicePricingMode;
   issuedDate: string;
   dueDate: string;
   terms: string;
@@ -140,6 +145,7 @@ function buildInvoiceDocumentData(params: {
   flat: string[];
   items: InvoiceItem[];
   totalValue: number;
+  pricingMode: InvoicePricingMode;
   bankAccountName: string;
   bankSortCode: string;
   bankAccountNumber: string;
@@ -173,6 +179,8 @@ function buildInvoiceDocumentData(params: {
 
   return {
     invoiceNumber: params.invoiceNumber.trim() || "Inv-0000",
+    accountName: params.bankAccountName.trim() || "-",
+    pricingMode: params.pricingMode,
     issuedDate: formattedDate,
     dueDate: formattedDate,
     terms: "Due on receipt",
@@ -191,18 +199,46 @@ function buildPreviewHtml(params: {
   mediaFileName: string | null;
 }) {
   const { documentData, mediaPreviewUrl, mediaPreviewKind, mediaFileName } = params;
+  const showItemAmounts = documentData.pricingMode === "per_item";
+  const accountNameMissing = documentData.accountName === "-";
 
   const tableRows = documentData.items
     .map(
       (item) => `
         <tr>
           <td>${escapeHtml(item.dateLabel)}</td>
-          <td>${item.description ? escapeHtml(item.description) : "&nbsp;"}</td>
-          <td class="num">${escapeHtml(item.amountLabel)}</td>
+          <td class="${showItemAmounts ? "" : "desc-center"}">${item.description ? escapeHtml(item.description) : "&nbsp;"}</td>
+          ${showItemAmounts ? `<td class="num">${escapeHtml(item.amountLabel)}</td>` : ""}
         </tr>
       `
     )
     .join("");
+
+  const tableColumns = showItemAmounts
+    ? `
+        <col style="width: 20%" />
+        <col style="width: 58%" />
+        <col style="width: 22%" />
+      `
+    : `
+        <col style="width: 20%" />
+        <col style="width: 80%" />
+      `;
+
+  const tableHeadMarkup = showItemAmounts
+    ? `
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th class="num">Amount</th>
+        </tr>
+      `
+    : `
+        <tr>
+          <th>Date</th>
+          <th class="desc-center">Description</th>
+        </tr>
+      `;
 
   const bankDetailsMarkup = documentData.bankDetails
     .map(
@@ -224,10 +260,7 @@ function buildPreviewHtml(params: {
           ? `<div class="media-note">File attached<br />${escapeHtml(mediaFileName ?? "attachment")}</div>`
           : `<div class="media-placeholder">Media area<br />Attach image or PDF</div>`;
 
-  const mediaMarkup = `
-    <div class="media-title">Media</div>
-    <div class="media-body">${mediaBodyMarkup}</div>
-  `;
+  const mediaMarkup = mediaBodyMarkup;
 
   const invoiceToMarkup = documentData.invoiceToLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
 
@@ -263,9 +296,17 @@ function buildPreviewHtml(params: {
     }
     .top {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 250px;
-      gap: 28px;
-      align-items: start;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.95fr);
+      gap: 20px;
+      align-items: stretch;
+    }
+    .top-box {
+      min-height: 168px;
+      overflow: hidden;
+    }
+    .invoice-to-box {
+      padding: 16px 18px;
+      background: #fff;
     }
     .invoice-to-label {
       color: var(--accent);
@@ -276,64 +317,59 @@ function buildPreviewHtml(params: {
       text-transform: uppercase;
     }
     .invoice-to-body {
-      min-height: 108px;
-      font-size: 14px;
-      line-height: 1.6;
+      min-height: 116px;
+      font-size: 15px;
+      line-height: 1.7;
       white-space: normal;
     }
-    .meta-stack {
+    .meta-panel {
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+    }
+    .meta-row {
       display: grid;
-      gap: 10px;
+      grid-template-columns: 108px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 15px 18px;
     }
-    .meta-box,
-    .meta-split {
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .meta-box {
-      background: var(--accent);
-      color: #fff;
-      padding: 12px 14px;
-    }
-    .meta-split {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      background: var(--accent);
-      color: #fff;
-    }
-    .meta-split > div {
-      padding: 12px 14px;
-    }
-    .meta-split > div + div {
-      border-left: 1px solid rgba(255, 255, 255, 0.22);
-    }
-    .meta-label {
+    .meta-row-account {
       display: block;
-      font-size: 10px;
+      text-align: right;
+      background: #eef4fa;
+    }
+    .meta-inline-label {
+      font-size: 9px;
       font-weight: 700;
-      letter-spacing: 0.14em;
-      margin-bottom: 6px;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      opacity: 0.88;
+      color: var(--accent-dark);
     }
-    .meta-value {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
+    .meta-inline-value {
+      font-size: 9px;
+      font-weight: 700;
       line-height: 1.25;
-      width:100%;
+      text-align: right;
       overflow-wrap: anywhere;
     }
-    .top-rule {
-      height: 4px;
-      margin: 22px 0;
-      background: var(--accent);
+    .meta-inline-value-invoice {
+      display: block;
+      font-size: 10px;
+      text-align: center;
+    }
+    .meta-inline-value-center {
+      text-align: center;
+    }
+    .meta-inline-value-full {
+      display: block;
     }
     table {
       width: 100%;
       border-collapse: collapse;
       table-layout: fixed;
       font-size: 13px;
+      margin-top: 22px;
     }
     thead th {
       background: var(--accent);
@@ -345,8 +381,10 @@ function buildPreviewHtml(params: {
       letter-spacing: 0.12em;
       text-transform: uppercase;
     }
+    tbody tr:nth-child(odd) td {
+      background: #f6f8fb;
+    }
     tbody td {
-      border-bottom: 1px solid var(--line);
       padding: 12px 10px;
       vertical-align: top;
       color: var(--text);
@@ -357,10 +395,11 @@ function buildPreviewHtml(params: {
       text-align: right;
       white-space: nowrap;
     }
+    .desc-center {
+      text-align: center;
+    }
     .total-due {
-      margin: 18px 0 18px auto;
-      width: 240px;
-      border: 1px solid var(--line);
+      width: 100%;
       border-top: 4px solid var(--accent);
       padding: 14px 16px;
       background: var(--panel);
@@ -382,11 +421,16 @@ function buildPreviewHtml(params: {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 18px;
-      align-items: stretch;
+      margin-top: 18px;
+      align-items: start;
+    }
+    .bottom-side {
+      display: grid;
+      gap: 18px;
+      align-items: start;
     }
     .bottom-box {
-      min-height: 170px;
-      border: 1px solid var(--line);
+      min-height: 220px;
       background: #fff;
     }
     .bank-box {
@@ -395,7 +439,7 @@ function buildPreviewHtml(params: {
       justify-content: center;
       padding: 18px;
       background: var(--panel);
-      text-align: center;
+      text-align: left;
     }
     .bank-title {
       color: var(--accent);
@@ -403,61 +447,58 @@ function buildPreviewHtml(params: {
       font-weight: 700;
       letter-spacing: 0.14em;
       margin-bottom: 14px;
+      text-align: center;
       text-transform: uppercase;
+    }
+    .bank-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: baseline;
+      font-size: 13px;
+      line-height: 1.5;
     }
     .bank-row + .bank-row {
       margin-top: 8px;
     }
     .bank-label {
-      display: block;
+      display: inline;
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.08em;
-      text-transform: uppercase;
       color: var(--muted);
     }
     .bank-value {
-      display: block;
-      margin-top: 4px;
+      display: inline;
+      margin-top: 0;
       font-size: 14px;
       font-weight: 700;
       color: var(--text);
       overflow-wrap: anywhere;
     }
     .media-box {
-      display: flex;
-      flex-direction: column;
-      background: #fbfdff;
-      overflow: hidden;
-    }
-    .media-title {
-      color: var(--accent);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.14em;
-      padding: 18px 18px 12px;
-      text-align: center;
-      text-transform: uppercase;
-    }
-    .media-body {
-      flex: 1;
       display: grid;
       place-items: center;
-      min-height: 148px;
-      padding: 0 10px 10px;
+      min-height: 300px;
+      padding: 0;
+      background: #fbfdff;
       overflow: hidden;
     }
     .media-box img,
     .media-box object {
       width: 100%;
       height: 100%;
-      min-height: 148px;
+      min-height: 300px;
       object-fit: contain;
       border: 0;
       background: #fff;
     }
     .media-placeholder,
     .media-note {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 100%;
       text-align: center;
       font-size: 13px;
       line-height: 1.5;
@@ -470,65 +511,58 @@ function buildPreviewHtml(params: {
 <body>
   <div class="page">
     <div class="top">
-      <div>
+      <div class="top-box invoice-to-box">
         <div class="invoice-to-label">Invoice To</div>
         <div class="invoice-to-body">${invoiceToMarkup}</div>
       </div>
 
-      <div class="meta-stack">
-        <div class="meta-box">
-          <span class="meta-label">Invoice</span>
-          <span class="meta-value">${escapeHtml(documentData.invoiceNumber)}</span>
+      <div class="top-box meta-panel">
+        <div class="meta-row" style="display:block;text-align:center;">
+          <span class="meta-inline-value meta-inline-value-invoice">${escapeHtml(documentData.invoiceNumber)}</span>
         </div>
-        <div class="meta-split">
-          <div>
-            <span class="meta-label">Date</span>
-            <span class="meta-value">${escapeHtml(documentData.issuedDate)}</span>
-          </div>
-          <div>
-            <span class="meta-label">Terms</span>
-            <span class="meta-value">${escapeHtml(documentData.terms)}</span>
-          </div>
+        <div class="meta-row meta-row-account">
+          <span class="meta-inline-value meta-inline-value-full ${accountNameMissing ? "meta-inline-value-center" : ""}">${escapeHtml(documentData.accountName)}</span>
         </div>
-        <div class="meta-box">
-          <span class="meta-label">Due Date</span>
-          <span class="meta-value">${escapeHtml(documentData.dueDate)}</span>
+        <div class="meta-row">
+          <span class="meta-inline-label">Date :</span>
+          <span class="meta-inline-value">${escapeHtml(documentData.issuedDate)}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-inline-label">Terms :</span>
+          <span class="meta-inline-value">${escapeHtml(documentData.terms)}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-inline-label">Due date :</span>
+          <span class="meta-inline-value">${escapeHtml(documentData.dueDate)}</span>
         </div>
       </div>
     </div>
 
-    <div class="top-rule"></div>
-
     <table>
       <colgroup>
-        <col style="width: 20%" />
-        <col style="width: 58%" />
-        <col style="width: 22%" />
+        ${tableColumns}
       </colgroup>
       <thead>
-        <tr>
-          <th>Date</th>
-          <th>Description</th>
-          <th class="num">Amount</th>
-        </tr>
+        ${tableHeadMarkup}
       </thead>
       <tbody>
         ${tableRows}
       </tbody>
     </table>
 
-    <div class="total-due">
-      <div class="total-due-label">Total Due</div>
-      <div class="total-due-value">${escapeHtml(documentData.totalLabel)}</div>
-    </div>
-
     <div class="bottom">
-      <div class="bottom-box bank-box">
-        <div class="bank-title">Bank Details</div>
-        ${bankDetailsMarkup}
-      </div>
       <div class="bottom-box media-box">
         ${mediaMarkup}
+      </div>
+      <div class="bottom-side">
+        <div class="total-due">
+          <div class="total-due-label">Total Due</div>
+          <div class="total-due-value">${escapeHtml(documentData.totalLabel)}</div>
+        </div>
+        <div class="bottom-box bank-box">
+          <div class="bank-title">Bank Details</div>
+          ${bankDetailsMarkup}
+        </div>
       </div>
     </div>
   </div>
@@ -549,6 +583,8 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
   const [mediaPreviewKind, setMediaPreviewKind] = useState<MediaKind>("file");
   const [invoiceNumber, setInvoiceNumber] = useState("Inv-0001");
+  const [pricingMode, setPricingMode] = useState<InvoicePricingMode>("per_item");
+  const [invoiceTotalInput, setInvoiceTotalInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const flatOptions = ["50", "51", "52"];
@@ -584,6 +620,8 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
     setMediaPreviewUrl(null);
     setMediaPreviewKind("file");
     setInvoiceNumber("Inv-0001");
+    setPricingMode("per_item");
+    setInvoiceTotalInput("");
     setError(null);
     setSaving(false);
 
@@ -604,7 +642,10 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
     };
   }, [defaultDescription, onClose, open]);
 
-  const totalValue = useMemo(() => items.reduce((sum, item) => sum + getItemTotal(item), 0), [items]);
+  const totalValue = useMemo(
+    () => (pricingMode === "per_item" ? items.reduce((sum, item) => sum + getItemTotal(item), 0) : normalizeNumber(invoiceTotalInput)),
+    [invoiceTotalInput, items, pricingMode]
+  );
 
   const documentData = useMemo(
     () =>
@@ -615,12 +656,13 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
         flat,
         items,
         totalValue,
+        pricingMode,
         bankAccountName,
         bankSortCode,
         bankAccountNumber,
         bankReference,
       }),
-    [bankAccountName, bankAccountNumber, bankReference, bankSortCode, flat, invoiceDate, invoiceNumber, items, to, totalValue]
+    [bankAccountName, bankAccountNumber, bankReference, bankSortCode, flat, invoiceDate, invoiceNumber, items, pricingMode, to, totalValue]
   );
 
   const previewHtml = useMemo(
@@ -649,14 +691,21 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
   function handleMediaChange(file: File | null) {
     setMediaFile(file);
     setMediaPreviewUrl(null);
-    setMediaPreviewKind(file ? getMediaKind(file) : "file");
+    const nextMediaKind = file ? getMediaKind(file) : "file";
+    setMediaPreviewKind(nextMediaKind);
     setError(null);
 
     if (!file) return;
 
-    void fileToDataUrl(file)
+    const previewPromise =
+      nextMediaKind === "pdf" ? renderPdfFirstPageToDataUrl(file) : fileToDataUrl(file);
+
+    void previewPromise
       .then((dataUrl) => {
         setMediaPreviewUrl(dataUrl);
+        if (nextMediaKind === "pdf") {
+          setMediaPreviewKind("image");
+        }
       })
       .catch(() => {
         setMediaPreviewUrl(null);
@@ -679,76 +728,82 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
     const panelColor = [245, 248, 251] as const;
     let y = 46;
 
-    const metaWidth = 232;
+    const showItemAmounts = documentData.pricingMode === "per_item";
+    const topGap = 18;
+    const metaWidth = 280;
     const metaX = rightEdge - metaWidth;
-    const metaGap = 10;
-    const metaHeight = 40;
-    const splitHeight = 40;
+    const toWidth = contentWidth - metaWidth - topGap;
+    const topPadding = 16;
+    const metaLabelWidth = 84;
 
-    function drawMetaBox(x: number, top: number, width: number, height: number, label: string, value: string) {
-      pdf.setFillColor(...accent);
-      pdf.rect(x, top, width, height, "F");
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(8);
-      pdf.text(label.toUpperCase(), x + 12, top + 13);
-      pdf.setFontSize(12);
-      pdf.text(String(value), x + 12, top + 28);
-    }
+    const invoiceToText = documentData.invoiceToLines.join("\n");
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(12);
+    const invoiceToLines = pdf.splitTextToSize(invoiceToText, toWidth - topPadding * 2);
+    const toBoxHeight = Math.max(168, 24 + invoiceToLines.length * 16 + topPadding * 2);
 
-    function drawSplitMetaBox(
-      x: number,
-      top: number,
-      width: number,
-      height: number,
-      leftLabel: string,
-      leftValue: string,
-      rightLabel: string,
-      rightValue: string
-    ) {
-      const half = width / 2;
+    const metaRows = [
+      { label: "", value: documentData.invoiceNumber, valueOnly: true, centered: true, invoiceNumber: true },
+      { label: "", value: documentData.accountName, valueOnly: true, centered: documentData.accountName === "-", invoiceNumber: false },
+      { label: "Date :", value: documentData.issuedDate, valueOnly: false, centered: false, invoiceNumber: false },
+      { label: "Terms :", value: documentData.terms, valueOnly: false, centered: false, invoiceNumber: false },
+      { label: "Due date :", value: documentData.dueDate, valueOnly: false, centered: false, invoiceNumber: false },
+    ];
 
-      pdf.setFillColor(...accent);
-      pdf.rect(x, top, width, height, "F");
-      pdf.setDrawColor(255, 255, 255);
-      pdf.line(x + half, top, x + half, top + height);
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(8);
-      pdf.text(leftLabel.toUpperCase(), x + 12, top + 13);
-      pdf.text(rightLabel.toUpperCase(), x + half + 12, top + 13);
-      pdf.setFontSize(11);
-      pdf.text(String(leftValue), x + 12, top + 28);
-      pdf.text(String(rightValue), x + half + 12, top + 28);
-    }
+    const metaRowsWithLayout = metaRows.map((row) => {
+      const availableWidth = row.valueOnly ? metaWidth - topPadding * 2 : metaWidth - topPadding * 2 - metaLabelWidth - 12;
+      const lines = pdf.splitTextToSize(String(row.value), availableWidth);
+      const height = Math.max(row.valueOnly ? 28 : 30, lines.length * 13 + 14);
 
+      return { ...row, lines, height };
+    });
+
+    const metaContentHeight = metaRowsWithLayout.reduce((sum, row) => sum + row.height, 0);
+    const topBlockHeight = Math.max(toBoxHeight, metaContentHeight);
+
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(margin, y, toWidth, topBlockHeight, "F");
     pdf.setTextColor(...accent);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
-    pdf.text("INVOICE TO", margin, y + 10);
+    pdf.text("INVOICE TO", margin + topPadding, y + topPadding);
 
     pdf.setTextColor(15, 23, 32);
-    pdf.setFontSize(12);
-    const invoiceToText = documentData.invoiceToLines.join("\n");
-    const invoiceToLines = pdf.splitTextToSize(invoiceToText, contentWidth - metaWidth - 36);
     pdf.setFont("helvetica", "normal");
-    pdf.text(invoiceToLines, margin, y + 30);
+    pdf.setFontSize(12);
+    pdf.text(invoiceToLines, margin + topPadding, y + topPadding + 22);
 
-    drawMetaBox(metaX, y, metaWidth, metaHeight, "Invoice", documentData.invoiceNumber);
-    drawSplitMetaBox(metaX, y + metaHeight + metaGap, metaWidth, splitHeight, "Date", documentData.issuedDate, "Terms", documentData.terms);
-    drawMetaBox(metaX, y + metaHeight + metaGap + splitHeight + metaGap, metaWidth, metaHeight, "Due date", documentData.dueDate);
+    pdf.setFillColor(...panelColor);
+    pdf.rect(metaX, y, metaWidth, topBlockHeight, "F");
 
-    const topBlockHeight = Math.max(invoiceToLines.length * 15 + 26, metaHeight + splitHeight + metaHeight + metaGap * 2);
-    y += topBlockHeight + 18;
+    let metaRowY = y;
+    metaRowsWithLayout.forEach((row, index) => {
+      if (row.valueOnly) {
+        pdf.setFillColor(238, 244, 250);
+        pdf.rect(metaX, metaRowY, metaWidth, row.height, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(row.invoiceNumber ? 10 : 8);
+        pdf.setTextColor(15, 23, 32);
+        pdf.text(row.lines, row.centered ? metaX + metaWidth / 2 : metaX + metaWidth - topPadding, metaRowY + 18, {
+          align: row.centered ? "center" : "right",
+        });
+      } else {
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(7);
+        pdf.setTextColor(...accentDark);
+        pdf.text(row.label.toUpperCase(), metaX + topPadding, metaRowY + 17);
+        pdf.setFontSize(index === 0 ? 6 : 8);
+        pdf.setTextColor(15, 23, 32);
+        pdf.text(row.lines, metaX + metaWidth - topPadding, metaRowY + 18, { align: "right" });
+      }
 
-    pdf.setDrawColor(...accent);
-    pdf.setLineWidth(3);
-    pdf.line(margin, y, rightEdge, y);
-    pdf.setLineWidth(1);
-    y += 18;
+      metaRowY += row.height;
+    });
 
-    const tableHeaders = ["DATE", "DESCRIPTION", "AMOUNT"];
-    const columnWidths = [94, 288, contentWidth - 94 - 288];
+    y += topBlockHeight + 22;
+
+    const tableHeaders = showItemAmounts ? ["DATE", "DESCRIPTION", "AMOUNT"] : ["DATE", "DESCRIPTION"];
+    const columnWidths = showItemAmounts ? [94, 288, contentWidth - 94 - 288] : [94, contentWidth - 94];
     const headerHeight = 32;
     const rowLineHeight = 13;
 
@@ -762,9 +817,10 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
       pdf.setTextColor(255, 255, 255);
 
       tableHeaders.forEach((header, index) => {
-        const isNumeric = index === 2;
-        pdf.text(header, isNumeric ? x + columnWidths[index] - 8 : x + 8, top + 20, {
-          align: isNumeric ? "right" : "left",
+        const isNumeric = showItemAmounts && index === 2;
+        const isCenteredDescription = !showItemAmounts && index === 1;
+        pdf.text(header, isNumeric ? x + columnWidths[index] - 8 : isCenteredDescription ? x + columnWidths[index] / 2 : x + 8, top + 20, {
+          align: isNumeric ? "right" : isCenteredDescription ? "center" : "left",
         });
         x += columnWidths[index];
       });
@@ -796,33 +852,38 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
 
       let x = margin;
 
-      pdf.rect(margin, y, contentWidth, rowHeight);
-      for (let index = 0; index < columnWidths.length - 1; index += 1) {
-        x += columnWidths[index];
-        pdf.line(x, y, x, y + rowHeight);
-      }
-
       x = margin;
       pdf.text(String(item.dateLabel), x + 8, y + 18);
       x += columnWidths[0];
 
-      pdf.text(descriptionLines, x + 8, y + 18);
+      if (showItemAmounts) {
+        pdf.text(descriptionLines, x + 8, y + 18);
+      } else {
+        pdf.text(descriptionLines, x + columnWidths[1] / 2, y + 18, { align: "center" });
+      }
       x += columnWidths[1];
 
-      pdf.text(String(item.amountLabel), x + columnWidths[2] - 8, y + 18, { align: "right" });
+      if (showItemAmounts) {
+        pdf.text(String(item.amountLabel), x + columnWidths[2] - 8, y + 18, { align: "right" });
+      }
       y += rowHeight;
     });
 
-    ensureSpace(90);
-
-    const totalBoxWidth = 218;
+    const boxGap = 16;
+    const boxWidth = (contentWidth - boxGap) / 2;
+    const totalBoxWidth = boxWidth;
     const totalBoxHeight = 58;
-    const totalX = rightEdge - totalBoxWidth;
+    const bankBoxHeight = 220;
+    const mediaBoxHeight = 300;
+    const stackGap = 16;
+    const mediaBoxX = margin;
+    const rightColumnX = mediaBoxX + boxWidth + boxGap;
+    const totalX = rightColumnX;
 
     y += 18;
+    ensureSpace(Math.max(mediaBoxHeight, totalBoxHeight + stackGap + bankBoxHeight));
     pdf.setFillColor(...panelColor);
-    pdf.setDrawColor(...lineColor);
-    pdf.rect(totalX, y, totalBoxWidth, totalBoxHeight, "FD");
+    pdf.rect(totalX, y, totalBoxWidth, totalBoxHeight, "F");
     pdf.setFillColor(...accent);
     pdf.rect(totalX, y, totalBoxWidth, 6, "F");
     pdf.setFont("helvetica", "bold");
@@ -833,51 +894,32 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
     pdf.setTextColor(15, 23, 32);
     pdf.text(String(documentData.totalLabel), totalX + totalBoxWidth - 14, y + 42, { align: "right" });
 
-    y += totalBoxHeight + 18;
-
-    const boxGap = 16;
-    const boxWidth = (contentWidth - boxGap) / 2;
-    const boxHeight = 168;
-
-    ensureSpace(boxHeight);
-
-    const bankBoxX = margin;
-    const mediaBoxX = bankBoxX + boxWidth + boxGap;
+    const cardsY = y;
+    const bankBoxX = rightColumnX;
+    const bankBoxY = cardsY + totalBoxHeight + stackGap;
 
     pdf.setFillColor(...panelColor);
-    pdf.setDrawColor(...lineColor);
-    pdf.rect(bankBoxX, y, boxWidth, boxHeight, "FD");
+    pdf.rect(bankBoxX, bankBoxY, boxWidth, bankBoxHeight, "F");
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(9);
     pdf.setTextColor(...accentDark);
-    pdf.text("BANK DETAILS", bankBoxX + boxWidth / 2, y + 24, { align: "center" });
+    pdf.text("BANK DETAILS", bankBoxX + boxWidth / 2, bankBoxY + 24, { align: "center" });
     pdf.setTextColor(15, 23, 32);
 
-    let bankY = y + 48;
+    let bankY = bankBoxY + 48;
     documentData.bankDetails.forEach((detail) => {
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(8);
-      pdf.setTextColor(90, 103, 118);
-      pdf.text(String(detail.label).toUpperCase(), bankBoxX + boxWidth / 2, bankY, { align: "center" });
-      bankY += 13;
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(11);
       pdf.setTextColor(15, 23, 32);
-      const detailLines = pdf.splitTextToSize(String(detail.value), boxWidth - 24);
-      pdf.text(detailLines, bankBoxX + boxWidth / 2, bankY, { align: "center" });
-      bankY += detailLines.length * 12 + 10;
+      pdf.setFontSize(10);
+      const detailLines = pdf.splitTextToSize(`${detail.label} ${detail.value}`, boxWidth - 32);
+      pdf.text(detailLines, bankBoxX + 16, bankY);
+      bankY += detailLines.length * 12 + 8;
     });
 
     pdf.setFillColor(251, 253, 255);
-    pdf.setDrawColor(...lineColor);
-    pdf.rect(mediaBoxX, y, boxWidth, boxHeight, "FD");
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(9);
-    pdf.setTextColor(...accentDark);
-    pdf.text("MEDIA", mediaBoxX + boxWidth / 2, y + 24, { align: "center" });
-
-    const mediaBodyTop = y + 40;
-    const mediaBodyHeight = boxHeight - 50;
+    pdf.rect(mediaBoxX, cardsY, boxWidth, mediaBoxHeight, "F");
+    const mediaBodyTop = cardsY;
+    const mediaBodyHeight = mediaBoxHeight;
 
     if (mediaPreviewUrl && mediaPreviewKind === "image") {
       const dataUrlMatch = /^data:(image\/[a-zA-Z0-9+.-]+);base64,/.exec(mediaPreviewUrl);
@@ -887,7 +929,7 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
       try {
         const properties = pdf.getImageProperties(mediaPreviewUrl);
         const availableWidth = boxWidth - 16;
-        const availableHeight = mediaBodyHeight - 10;
+        const availableHeight = mediaBodyHeight - 16;
         const widthRatio = availableWidth / properties.width;
         const heightRatio = availableHeight / properties.height;
         const ratio = Math.min(widthRatio, heightRatio);
@@ -962,7 +1004,12 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
       return;
     }
 
-    if (normalizedItems.length === 0 || totalValue <= 0 || normalizedItems.some((item) => item.totalNumber <= 0)) {
+    if (normalizedItems.length === 0 || totalValue <= 0) {
+      setError(pricingMode === "per_item" ? "Enter a valid total for every invoice item." : "Enter a valid invoice total.");
+      return;
+    }
+
+    if (pricingMode === "per_item" && normalizedItems.some((item) => item.totalNumber <= 0)) {
       setError("Enter a valid total for every invoice item.");
       return;
     }
@@ -1110,6 +1157,30 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
                 </section>
 
                 <section className="grid gap-3">
+                  <div className="grid gap-2">
+                    <span className="oak-label">Pricing mode</span>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-oak-border bg-white px-3 py-3 text-sm font-semibold text-oak-coffee">
+                        <input
+                          type="radio"
+                          name="pricing-mode-contractor"
+                          checked={pricingMode === "per_item"}
+                          onChange={() => setPricingMode("per_item")}
+                        />
+                        <span>Value per item</span>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-oak-border bg-white px-3 py-3 text-sm font-semibold text-oak-coffee">
+                        <input
+                          type="radio"
+                          name="pricing-mode-contractor"
+                          checked={pricingMode === "invoice_total"}
+                          onChange={() => setPricingMode("invoice_total")}
+                        />
+                        <span>Total invoice value</span>
+                      </label>
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between gap-3">
                     <p className="oak-label">Invoice items</p>
                     <button className="oak-button-secondary !min-h-9 !px-3 !py-2" type="button" onClick={addItem}>
@@ -1152,24 +1223,40 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
                           />
                         </label>
 
-                        <label className="grid gap-1.5">
-                          <span className="oak-label">Total</span>
-                          <input
-                            className="oak-input !min-h-10 !px-3 !py-2"
-                            min="0"
-                            step="0.01"
-                            type="number"
-                            value={item.total}
-                            onChange={(event) => updateItem(item.id, { total: event.target.value })}
-                          />
-                        </label>
+                        {pricingMode === "per_item" ? (
+                          <label className="grid gap-1.5">
+                            <span className="oak-label">Total</span>
+                            <input
+                              className="oak-input !min-h-10 !px-3 !py-2"
+                              min="0"
+                              step="0.01"
+                              type="number"
+                              value={item.total}
+                              onChange={(event) => updateItem(item.id, { total: event.target.value })}
+                            />
+                          </label>
+                        ) : null}
                       </div>
                     ))}
                   </div>
 
-                  <div className="rounded-2xl bg-oak-panel p-3 text-sm font-extrabold text-oak-coffee">
-                    Invoice total: {formatCurrency(totalValue)}
-                  </div>
+                  {pricingMode === "invoice_total" ? (
+                    <label className="grid gap-1.5 rounded-2xl bg-oak-panel p-3">
+                      <span className="oak-label">Invoice total</span>
+                      <input
+                        className="oak-input !min-h-10 !px-3 !py-2"
+                        min="0"
+                        step="0.01"
+                        type="number"
+                        value={invoiceTotalInput}
+                        onChange={(event) => setInvoiceTotalInput(event.target.value)}
+                      />
+                    </label>
+                  ) : (
+                    <div className="rounded-2xl bg-oak-panel p-3 text-sm font-extrabold text-oak-coffee">
+                      Invoice total: {formatCurrency(totalValue)}
+                    </div>
+                  )}
                 </section>
 
                 <section className="grid gap-1.5">

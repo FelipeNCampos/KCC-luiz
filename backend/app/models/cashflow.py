@@ -38,6 +38,7 @@ class CashFlowRecord(Base):
         nullable=False,
     )
     has_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    invoice_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
     invoice_media_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     invoice_media_mime: Mapped[str | None] = mapped_column(String(120), nullable=True)
     invoice_media_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)

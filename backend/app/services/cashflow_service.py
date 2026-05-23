@@ -51,6 +51,7 @@ class CashFlowService:
         invoice_media_data: bytes | None = None,
     ) -> CashFlowRecord:
         description = self._clean_optional_text(payload.description)
+        invoice_number = self._clean_optional_text(payload.invoice_number)
         supplier = self._clean_optional_text(payload.supplier)
         cashflow_scope = self._normalize_scope(payload.scope)
         flat = (
@@ -63,6 +64,7 @@ class CashFlowService:
             payment_number=self.repository.get_next_payment_number(),
             cashflow_scope=cashflow_scope,
             has_invoice=payload.has_invoice,
+            invoice_number=invoice_number if payload.has_invoice else None,
             invoice_media_name=invoice_media_name if payload.has_invoice else None,
             invoice_media_mime=invoice_media_mime if payload.has_invoice else None,
             invoice_media_data=invoice_media_data if payload.has_invoice else None,
@@ -123,6 +125,7 @@ class CashFlowService:
                     id=record.id,
                     payment_number=dynamic_payment_number,
                     has_invoice=record.has_invoice,
+                    invoice_number=record.invoice_number,
                     invoice_media_name=record.invoice_media_name,
                     record_date=record.record_date,
                     amount=record.amount,
@@ -176,9 +179,10 @@ class CashFlowService:
     def update_invoice_media(
         self,
         record_id: int,
-        invoice_media_name: str | None,
-        invoice_media_mime: str | None,
-        invoice_media_data: bytes,
+        invoice_number: str | None = None,
+        invoice_media_name: str | None = None,
+        invoice_media_mime: str | None = None,
+        invoice_media_data: bytes | None = None,
     ) -> CashFlowRecord:
         record = self.repository.get_by_id(record_id)
         if record is None:
@@ -187,10 +191,16 @@ class CashFlowService:
                 detail="Cash flow record not found",
             )
 
-        record.has_invoice = True
-        record.invoice_media_name = invoice_media_name or "invoice"
-        record.invoice_media_mime = invoice_media_mime
-        record.invoice_media_data = invoice_media_data
+        if invoice_number is not None:
+            record.invoice_number = self._clean_optional_text(invoice_number)
+
+        if invoice_media_data is not None:
+            record.has_invoice = True
+            record.invoice_media_name = invoice_media_name or "invoice"
+            record.invoice_media_mime = invoice_media_mime
+            record.invoice_media_data = invoice_media_data
+        elif record.invoice_number:
+            record.has_invoice = True
         return self.repository.save(record)
 
     def get_invoice_media(self, record_id: int) -> tuple[str, str, bytes]:
@@ -330,7 +340,12 @@ class CashFlowService:
                 or not record.invoice_media_mime
             ):
                 continue
-            self._append_media_pages(writer, record.invoice_media_data, record.invoice_media_mime)
+            self._append_media_pages(
+                writer,
+                record.invoice_media_data,
+                record.invoice_media_mime,
+                self._report_invoice_label(record.invoice_number, item.payment_number),
+            )
 
         output = BytesIO()
         writer.write(output)
@@ -369,7 +384,9 @@ class CashFlowService:
         ]
 
         summary_rows = [
-            ["Balance", CashFlowService._format_money(closing_balance)],
+            ["Opening Balance", CashFlowService._format_money(opening_balance)],
+            ["Period Balance", CashFlowService._format_money(listing.monthly_total)],
+            ["Closing Balance", CashFlowService._format_money(closing_balance)],
         ]
         story.append(
             CashFlowService._styled_table(summary_rows, [90 * mm, 55 * mm], has_header=False)
@@ -505,59 +522,72 @@ class CashFlowService:
         return table
 
     @staticmethod
-    def _append_media_pages(writer: PdfWriter, data: bytes, mime_type: str) -> None:
+    def _append_media_pages(
+        writer: PdfWriter,
+        data: bytes,
+        mime_type: str,
+        invoice_label: str,
+    ) -> None:
         if mime_type == "application/pdf":
             try:
                 reader = PdfReader(BytesIO(data))
                 for page in reader.pages:
-                    writer.add_page(CashFlowService._center_pdf_page(page))
+                    writer.add_page(CashFlowService._center_pdf_page(page, invoice_label))
                 return
             except (PdfReadError, ValueError, TypeError):
                 pass
 
         if mime_type.startswith("image/"):
             try:
-                media_pdf = CashFlowService._image_to_centered_pdf_page(data)
+                media_pdf = CashFlowService._image_to_centered_pdf_page(data, invoice_label)
                 for page in PdfReader(BytesIO(media_pdf)).pages:
                     writer.add_page(page)
                 return
             except OSError:
                 pass
 
-        fallback_pdf = CashFlowService._placeholder_pdf_page("Unable to render invoice media")
+        fallback_pdf = CashFlowService._placeholder_pdf_page(
+            "Unable to render invoice media",
+            invoice_label,
+        )
         for page in PdfReader(BytesIO(fallback_pdf)).pages:
             writer.add_page(page)
 
     @staticmethod
-    def _center_pdf_page(source_page: PageObject) -> PageObject:
+    def _center_pdf_page(source_page: PageObject, invoice_label: str) -> PageObject:
         page_width, page_height = A4
         target_page = PageObject.create_blank_page(width=page_width, height=page_height)
         media_box = source_page.mediabox
         source_width = float(media_box.width)
         source_height = float(media_box.height)
         if source_width <= 0 or source_height <= 0:
+            target_page.merge_page(CashFlowService._invoice_header_page(invoice_label))
             return target_page
-        scale = min(page_width / source_width, page_height / source_height)
-        x_offset = (page_width - source_width * scale) / 2
-        y_offset = (page_height - source_height * scale) / 2
+        content_x, content_y, content_width, content_height = CashFlowService._media_content_box()
+        scale = min(content_width / source_width, content_height / source_height)
+        x_offset = content_x + (content_width - source_width * scale) / 2
+        y_offset = content_y + (content_height - source_height * scale) / 2
         source_page.cropbox = RectangleObject(media_box)
         transformation = Transformation().scale(scale).translate(x_offset, y_offset)
         target_page.merge_transformed_page(source_page, transformation)
+        target_page.merge_page(CashFlowService._invoice_header_page(invoice_label))
         return target_page
 
     @staticmethod
-    def _image_to_centered_pdf_page(data: bytes) -> bytes:
+    def _image_to_centered_pdf_page(data: bytes, invoice_label: str) -> bytes:
         output = BytesIO()
         page_width, page_height = A4
         image = ImageReader(BytesIO(data))
         image_width, image_height = image.getSize()
-        scale = min(page_width / image_width, page_height / image_height)
+        content_x, content_y, content_width, content_height = CashFlowService._media_content_box()
+        scale = min(content_width / image_width, content_height / image_height)
         draw_width = image_width * scale
         draw_height = image_height * scale
-        x = (page_width - draw_width) / 2
-        y = (page_height - draw_height) / 2
+        x = content_x + (content_width - draw_width) / 2
+        y = content_y + (content_height - draw_height) / 2
 
         pdf = canvas.Canvas(output, pagesize=A4)
+        CashFlowService._draw_invoice_header(pdf, page_width, page_height, invoice_label)
         pdf.drawImage(
             image,
             x,
@@ -572,15 +602,56 @@ class CashFlowService:
         return output.getvalue()
 
     @staticmethod
-    def _placeholder_pdf_page(message: str) -> bytes:
+    def _placeholder_pdf_page(message: str, invoice_label: str) -> bytes:
         output = BytesIO()
         page_width, page_height = A4
         pdf = canvas.Canvas(output, pagesize=A4)
+        CashFlowService._draw_invoice_header(pdf, page_width, page_height, invoice_label)
         pdf.setFont("Helvetica", 11)
-        pdf.drawCentredString(page_width / 2, page_height / 2, message)
+        _, content_y, _, content_height = CashFlowService._media_content_box()
+        pdf.drawCentredString(page_width / 2, content_y + content_height / 2, message)
         pdf.showPage()
         pdf.save()
         return output.getvalue()
+
+    @staticmethod
+    def _invoice_header_page(invoice_label: str) -> PageObject:
+        overlay_pdf = BytesIO()
+        page_width, page_height = A4
+        pdf = canvas.Canvas(overlay_pdf, pagesize=A4)
+        CashFlowService._draw_invoice_header(pdf, page_width, page_height, invoice_label)
+        pdf.showPage()
+        pdf.save()
+        return PdfReader(BytesIO(overlay_pdf.getvalue())).pages[0]
+
+    @staticmethod
+    def _draw_invoice_header(
+        pdf: canvas.Canvas,
+        page_width: float,
+        page_height: float,
+        invoice_label: str,
+    ) -> None:
+        header_height = page_height * 0.07
+        pdf.setFillColor(colors.HexColor("#C62828"))
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(10 * mm, page_height - header_height / 2, invoice_label)
+
+    @staticmethod
+    def _media_content_box() -> tuple[float, float, float, float]:
+        page_width, page_height = A4
+        header_height = page_height * 0.07
+        horizontal_padding = 10 * mm
+        vertical_padding = 8 * mm
+        return (
+            horizontal_padding,
+            vertical_padding,
+            page_width - (horizontal_padding * 2),
+            (page_height - header_height) - (vertical_padding * 2),
+        )
+
+    @staticmethod
+    def _report_invoice_label(invoice_number: str | None, payment_number: int) -> str:
+        return f"Invoice: {invoice_number}" if invoice_number else f"Invoice: Payment #{payment_number}"
 
     @staticmethod
     def _format_money(value: Decimal) -> str:

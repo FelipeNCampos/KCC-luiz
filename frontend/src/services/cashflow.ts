@@ -6,6 +6,7 @@ export type CashFlowRow = {
   id: number;
   payment_number: number;
   has_invoice: boolean;
+  invoice_number: string | null;
   invoice_media_name: string | null;
   record_date: string;
   amount: string;
@@ -31,6 +32,7 @@ type CashFlowNextPaymentNumberResponse = {
 export type CreateCashFlowPayload = {
   scope?: CashFlowScope;
   invoice: "Yes" | "No";
+  invoiceNumber?: string;
   date: string;
   value: string;
   description?: string;
@@ -79,6 +81,9 @@ export const cashFlowService = {
     }
 
     formData.append("invoice", payload.invoice);
+    if (payload.invoiceNumber && payload.invoiceNumber.trim()) {
+      formData.append("invoice_number", payload.invoiceNumber);
+    }
     formData.append("date", payload.date);
     formData.append("value", payload.value);
 
@@ -113,9 +118,14 @@ export const cashFlowService = {
     return data;
   },
 
-  async updateInvoiceMedia(recordId: number, invoiceMedia: File) {
+  async updateInvoiceMedia(recordId: number, payload: { invoiceMedia?: File | null; invoiceNumber?: string | null }) {
     const formData = new FormData();
-    formData.append("invoice_media", invoiceMedia);
+    if (payload.invoiceMedia) {
+      formData.append("invoice_media", payload.invoiceMedia);
+    }
+    if (payload.invoiceNumber !== undefined) {
+      formData.append("invoice_number", payload.invoiceNumber ?? "");
+    }
 
     const { data } = await api.patch<CashFlowRow>(`/cashflow/${recordId}/invoice`, formData, {
       headers: { "Content-Type": "multipart/form-data" }

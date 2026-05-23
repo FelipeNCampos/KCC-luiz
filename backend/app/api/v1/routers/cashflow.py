@@ -91,6 +91,7 @@ async def create_cashflow_record(
     supplier: Annotated[str | None, Form(alias="supplier")] = None,
     flat: Annotated[str | None, Form(alias="flat")] = None,
     scope: Annotated[str | None, Form(alias="scope")] = None,
+    invoice_number: Annotated[str | None, Form(alias="invoice_number")] = None,
     invoice_media: Annotated[UploadFile | None, File(alias="invoice_media")] = None,
 ) -> CashFlowRow:
     has_invoice = _parse_invoice_flag(invoice)
@@ -117,6 +118,7 @@ async def create_cashflow_record(
 
     payload = CashFlowCreate(
         has_invoice=has_invoice,
+        invoice_number=invoice_number,
         record_date=record_date,
         value=value,
         description=description,
@@ -154,26 +156,40 @@ async def update_cashflow_invoice(
     record_id: int,
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_roles("admin", "manager"))],
-    invoice_media: Annotated[UploadFile, File(alias="invoice_media")],
+    invoice_number: Annotated[str | None, Form(alias="invoice_number")] = None,
+    invoice_media: Annotated[UploadFile | None, File(alias="invoice_media")] = None,
 ) -> CashFlowRow:
-    _validate_invoice_media(invoice_media)
-    invoice_bytes = await invoice_media.read()
-    if not invoice_bytes:
+    if invoice_media is None and (invoice_number is None or not invoice_number.strip()):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Invoice media is required",
+            detail="Invoice media or invoice number is required",
         )
-    if len(invoice_bytes) > MAX_INVOICE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Invoice media is too large",
-        )
+
+    _validate_invoice_media(invoice_media)
+    invoice_bytes: bytes | None = None
+    invoice_name: str | None = None
+    invoice_mime: str | None = None
+    if invoice_media is not None:
+        invoice_bytes = await invoice_media.read()
+        if not invoice_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invoice media is required",
+            )
+        if len(invoice_bytes) > MAX_INVOICE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Invoice media is too large",
+            )
+        invoice_name = invoice_media.filename
+        invoice_mime = invoice_media.content_type
 
     service = CashFlowService(CashFlowRepository(db))
     updated = service.update_invoice_media(
         record_id=record_id,
-        invoice_media_name=invoice_media.filename,
-        invoice_media_mime=invoice_media.content_type,
+        invoice_number=invoice_number,
+        invoice_media_name=invoice_name,
+        invoice_media_mime=invoice_mime,
         invoice_media_data=invoice_bytes,
     )
     return service.row_for_record(updated)

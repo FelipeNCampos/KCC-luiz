@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 class CashFlowCreate(BaseModel):
     has_invoice: bool = False
+    invoice_number: str | None = Field(default=None, max_length=120)
     scope: str | None = None
     record_date: date
     value: Decimal
@@ -41,6 +42,7 @@ class CashFlowRow(BaseModel):
     id: int
     payment_number: int
     has_invoice: bool
+    invoice_number: str | None
     invoice_media_name: str | None
     record_date: date
     amount: Decimal
