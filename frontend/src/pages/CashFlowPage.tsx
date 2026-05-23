@@ -682,7 +682,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
                         <td
-                          className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}
+                          className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
                         >
                           {formatCurrency(row.amount)}
                         </td>
