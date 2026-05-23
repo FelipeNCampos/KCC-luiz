@@ -210,7 +210,7 @@ export function CaretakerPage() {
       <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
         <button className="oak-button-primary" type="button" onClick={() => setIsInvoiceOpen(true)}>
           <FileText size={16} />
-          Emit invoice
+          Invoice
         </button>
         <button className="oak-button-secondary" type="button" onClick={() => setIsSettingsOpen(true)}>
           <Settings2 size={16} />
@@ -256,7 +256,7 @@ export function CaretakerPage() {
           </label>
           <button className="oak-button-primary hidden md:inline-flex" type="button" onClick={() => setIsInvoiceOpen(true)}>
             <FileText size={16} />
-            Emit invoice
+            Invoice
           </button>
         </div>
         <table className="w-full min-w-[1080px] text-left text-sm">

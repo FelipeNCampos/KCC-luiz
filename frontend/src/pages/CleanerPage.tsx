@@ -312,7 +312,7 @@ export function CleanerPage() {
           </label>
           <button className="oak-button-primary hidden md:inline-flex" type="button" onClick={() => setIsInvoiceOpen(true)}>
             <FileText size={16} />
-            Emit invoice
+            Invoice
           </button>
         </div>
         <table className="w-full min-w-[860px] text-left text-sm">
