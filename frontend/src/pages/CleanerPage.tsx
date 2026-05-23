@@ -269,7 +269,7 @@ export function CleanerPage() {
       <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
         <button className="oak-button-primary" type="button" onClick={() => setIsInvoiceOpen(true)}>
           <FileText size={16} />
-          Emit invoice
+          Invoice
         </button>
         <button className="oak-button-secondary" type="button" onClick={() => setIsSettingsOpen(true)}>
           <Settings2 size={16} />
