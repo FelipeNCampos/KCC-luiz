@@ -7,8 +7,9 @@ ENV CHOKIDAR_USEPOLLING=true \
 COPY package*.json ./
 RUN npm install
 COPY . .
+RUN chmod +x scripts/dev-start.sh
 EXPOSE 5173
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["sh", "./scripts/dev-start.sh"]
 
 FROM base AS build
 ARG VITE_API_BASE_URL=/api/v1

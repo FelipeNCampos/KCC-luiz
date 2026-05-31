@@ -89,7 +89,7 @@ services:
       - "${FRONTEND_PUBLIC_PORT:-15173}:5173"
     depends_on:
       - backend
-    command: npm run dev -- --host 0.0.0.0
+    command: sh ./scripts/dev-start.sh
     develop:
       watch:
         - action: sync
