@@ -85,7 +85,7 @@ export function DashboardPage() {
       setCleanerAccess(cleanerResponse.data);
       setContractorRecords(contractorResponse.data);
     } catch {
-      setRecordsError("Nao foi possivel carregar os registros.");
+      setRecordsError("Could not load records.");
     } finally {
       setRecordsLoading(false);
     }
@@ -180,14 +180,14 @@ export function DashboardPage() {
       await loadRecords();
     } catch (requestError) {
       const detail = (requestError as AxiosError<{ detail?: string }>).response?.data?.detail;
-      setRecordsError(detail ?? "Nao foi possivel salvar o OUT.");
+      setRecordsError(detail ?? "Could not save the OUT time.");
     } finally {
       setSavingOut(false);
     }
   }
 
   return (
-    <DashboardShell title="Overview" subtitle="Resumo rapido do mes">
+    <DashboardShell title="Overview" subtitle="Quick summary of the month">
       <section className="grid gap-4 md:grid-cols-2">
         <Link
           className="oak-card flex h-full flex-col justify-between p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-oak-taupe hover:shadow-oakLg active:translate-y-px"
@@ -195,10 +195,10 @@ export function DashboardPage() {
         >
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="oak-label">Financeiro</p>
+              <p className="oak-label">Finance</p>
               <h2 className="mt-2 text-2xl font-extrabold text-oak-coffee">Cashflow penthouse</h2>
               <p className="mt-3 max-w-[34ch] text-sm font-semibold leading-6 text-black/60">
-                Abra os registros financeiros do mes {currentMonth}.
+                Open the financial records for {currentMonth}.
               </p>
             </div>
             <div className="grid size-11 place-items-center rounded-xl bg-oak-panel text-oak-taupe">
@@ -208,7 +208,7 @@ export function DashboardPage() {
 
           <div className="mt-5 flex items-center justify-between gap-3">
             <span className="inline-flex items-center gap-2 text-sm font-extrabold text-oak-coffee">
-              Abrir cashflow
+              Open cashflow
               <ArrowRight size={16} strokeWidth={2.2} />
             </span>
           </div>
@@ -220,10 +220,10 @@ export function DashboardPage() {
         >
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="oak-label">Financeiro</p>
+              <p className="oak-label">Finance</p>
               <h2 className="mt-2 text-2xl font-extrabold text-oak-coffee">Cashflow 52</h2>
               <p className="mt-3 max-w-[34ch] text-sm font-semibold leading-6 text-black/60">
-                Abra os registros do cashflow 52 do mes {currentMonth}, sem campo de flat.
+                Open the Cashflow 52 records for {currentMonth}, without a flat field.
               </p>
             </div>
             <div className="grid size-11 place-items-center rounded-xl bg-oak-panel text-oak-taupe">
@@ -233,7 +233,7 @@ export function DashboardPage() {
 
           <div className="mt-5 flex items-center justify-between gap-3">
             <span className="inline-flex items-center gap-2 text-sm font-extrabold text-oak-coffee">
-              Abrir cashflow 52
+              Open cashflow 52
               <ArrowRight size={16} strokeWidth={2.2} />
             </span>
           </div>
@@ -274,7 +274,7 @@ export function DashboardPage() {
       <section className="oak-card overflow-x-auto">
         <div className="border-b border-oak-border p-4">
           <h2 className="text-lg font-extrabold text-oak-coffee">Access records</h2>
-          <p className="mt-1 text-sm font-semibold text-black/60">Cleaner e contractor deste mes.</p>
+          <p className="mt-1 text-sm font-semibold text-black/60">Cleaner and contractor records for this month.</p>
           {recordsError ? <p className="mt-3 rounded-xl bg-oak-dangerBg p-3 text-sm font-bold text-oak-danger">{recordsError}</p> : null}
         </div>
         <table className="w-full min-w-[980px] text-left text-sm">
@@ -291,10 +291,10 @@ export function DashboardPage() {
           </thead>
           <tbody>
             {recordsLoading ? (
-              <tr><td className="p-4 font-bold text-black/60" colSpan={7}>Carregando registros...</td></tr>
+              <tr><td className="p-4 font-bold text-black/60" colSpan={7}>Loading records...</td></tr>
             ) : null}
             {!recordsLoading && accessRows.length === 0 ? (
-              <tr><td className="p-4 font-bold text-black/60" colSpan={7}>Nenhum registro encontrado.</td></tr>
+              <tr><td className="p-4 font-bold text-black/60" colSpan={7}>No records found.</td></tr>
             ) : null}
             {accessRows.map((row) => {
               const isCleaner = row.type === "cleaner";
