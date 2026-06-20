@@ -394,7 +394,7 @@ class CashFlowService:
         story.append(Spacer(1, 12))
 
         if include_flat_fields:
-            rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Supplier", "Flat", "Balance"]]
+            rows = [["Invoice No", "Invoice", "Date", "Amount", "Comments", "Supplier", "Flat", "Balance"]]
             rows.extend(
                 [
                     [
@@ -414,7 +414,7 @@ class CashFlowService:
                 rows.append(["-", "-", "-", "-", "No records for this period.", "-", "-", "-"])
             record_widths = [16 * mm, 16 * mm, 20 * mm, 22 * mm, 38 * mm, 34 * mm, 16 * mm, 21 * mm]
         else:
-            rows = [["Payment #", "Invoice", "Date", "Amount", "Comments", "Supplier", "Balance"]]
+            rows = [["Invoice No", "Invoice", "Date", "Amount", "Comments", "Supplier", "Balance"]]
             rows.extend(
                 [
                     [
@@ -443,7 +443,7 @@ class CashFlowService:
             story.append(Spacer(1, 14))
             story.append(Paragraph("Invoices", styles["Heading2"]))
             if include_flat_fields:
-                invoice_rows = [["Payment #", "Date", "File", "Comments", "Supplier", "Flat"]]
+                invoice_rows = [["Invoice No", "Date", "File", "Comments", "Supplier", "Flat"]]
                 invoice_rows.extend(
                     [
                         [
@@ -462,7 +462,7 @@ class CashFlowService:
                     invoice_rows.append(["-", "-", "No invoice media in this period.", "-", "-", "-"])
                 invoice_widths = [20 * mm, 22 * mm, 34 * mm, 42 * mm, 38 * mm, 18 * mm]
             else:
-                invoice_rows = [["Payment #", "Date", "File", "Comments", "Supplier"]]
+                invoice_rows = [["Invoice No", "Date", "File", "Comments", "Supplier"]]
                 invoice_rows.extend(
                     [
                         [
@@ -651,7 +651,7 @@ class CashFlowService:
 
     @staticmethod
     def _report_invoice_label(invoice_number: str | None, payment_number: int) -> str:
-        return f"Invoice: {invoice_number}" if invoice_number else f"Invoice: Payment #{payment_number}"
+        return f"Invoice: {invoice_number}" if invoice_number else f"Invoice No #{payment_number}"
 
     @staticmethod
     def _format_money(value: Decimal) -> str:

@@ -649,7 +649,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
           <table className={`w-full ${tableMinWidthClass} text-left`}>
             <thead className="bg-oak-panel text-[11px] uppercase text-oak-muted">
               <tr>
-                <th className="px-4 py-3 font-extrabold">Payment Number</th>
+                <th className="px-4 py-3 font-extrabold">Invoice No</th>
                 <th className="px-4 py-3 font-extrabold">Invoice</th>
                 <th className="px-4 py-3 font-extrabold">Date</th>
                 <th className="px-4 py-3 font-extrabold text-right">Amount</th>
@@ -1123,7 +1123,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
               <div>
                 <p className="oak-label">Invoice media</p>
                 <h2 className="text-lg font-extrabold text-oak-coffee">
-                  {invoiceEditor.preview?.fileName ?? `Payment #${invoiceEditor.record.payment_number}`}
+                  {invoiceEditor.preview?.fileName ?? `Invoice No #${invoiceEditor.record.payment_number}`}
                 </h2>
               </div>
               <button

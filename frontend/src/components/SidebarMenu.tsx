@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   Building2,
@@ -10,20 +9,15 @@ import {
   LogOut,
   Package,
   QrCode,
-  Settings2,
   Sparkles,
   UsersRound
 } from "lucide-react";
 
 import { useAuth } from "../hooks/useAuth";
-import { TasksSettingsModal } from "./TasksSettingsModal";
-import { tasksService } from "../services/tasks";
 import {
   canAccessCashFlow,
   canAccessOakHill,
   canAccessOverview,
-  canAccessTasks,
-  canManageTasks,
   canManageUsers
 } from "../utils/permissions";
 
@@ -36,27 +30,9 @@ const navItemClass = ({ isActive }: { isActive: boolean }) =>
 
 export function SidebarMenu() {
   const { user, logout } = useAuth();
-  const [tasksModuleActive, setTasksModuleActive] = useState(true);
-  const [isTasksSettingsOpen, setIsTasksSettingsOpen] = useState(false);
-
-  useEffect(() => {
-    if (!canAccessTasks(user)) return;
-    let active = true;
-    tasksService
-      .getModuleSettings()
-      .then((response) => {
-        if (!active) return;
-        setTasksModuleActive(response.is_active);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [user]);
 
   return (
-    <>
-      <aside className="hidden border-r border-oak-border bg-[#faf8f6] lg:block">
+    <aside className="hidden border-r border-oak-border bg-[#faf8f6] lg:block">
         <div className="sticky top-0 flex h-[100dvh] flex-col p-4">
         <div className="mb-6 flex items-center gap-3 rounded-2xl bg-white p-4 shadow-oak">
           <div className="grid size-11 place-items-center rounded-xl bg-oak-panel text-oak-coffee">
@@ -87,30 +63,6 @@ export function SidebarMenu() {
                 <span>Cashflow 52</span>
               </NavLink>
             </>
-          ) : null}
-
-          {canAccessTasks(user) ? (
-            <div
-              className={`flex items-center gap-2 rounded-lg ${tasksModuleActive ? "" : "opacity-65"}`}
-            >
-              <NavLink
-                to="/tasks"
-                className={({ isActive }) => `${navItemClass({ isActive })} min-w-0 flex-1`}
-              >
-                <ListChecks size={18} strokeWidth={2.1} />
-                <span>Tasks</span>
-              </NavLink>
-              {canManageTasks(user) ? (
-                <button
-                  className="grid size-11 shrink-0 place-items-center rounded-lg border border-oak-border bg-white text-oak-taupe transition-all duration-200 hover:border-oak-taupe hover:text-oak-coffee"
-                  type="button"
-                  aria-label="Open task settings"
-                  onClick={() => setIsTasksSettingsOpen(true)}
-                >
-                  <Settings2 size={16} strokeWidth={2.1} />
-                </button>
-              ) : null}
-            </div>
           ) : null}
 
           {canAccessOakHill(user) ? (
@@ -172,18 +124,5 @@ export function SidebarMenu() {
         </div>
         </div>
       </aside>
-
-      {canAccessTasks(user) && canManageTasks(user) ? (
-        <TasksSettingsModal
-          open={isTasksSettingsOpen}
-          initialModuleActive={tasksModuleActive}
-          onClose={() => setIsTasksSettingsOpen(false)}
-          onSettingsChanged={() => {
-            void tasksService.getModuleSettings().then((response) => setTasksModuleActive(response.is_active));
-            window.dispatchEvent(new CustomEvent("tasks-settings-sync"));
-          }}
-        />
-      ) : null}
-    </>
   );
 }
