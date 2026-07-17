@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class CashFlowCreate(BaseModel):
@@ -82,3 +82,57 @@ class CashFlowReportPreviewRequest(BaseModel):
     month: str | None = None
     search: str | None = None
     include_invoice_table: bool = False
+
+
+class CashFlowShareLinkCreate(BaseModel):
+    scope: str | None = None
+    date_from: date
+    date_to: date
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def validate_period(self) -> "CashFlowShareLinkCreate":
+        if self.date_from > self.date_to:
+            raise ValueError("date_from must be before or equal to date_to")
+        if self.expires_at.tzinfo is None:
+            raise ValueError("expires_at must include a timezone")
+        return self
+
+
+class CashFlowShareLinkRead(BaseModel):
+    id: str
+    scope: str
+    date_from: date
+    date_to: date
+    expires_at: datetime
+    created_at: datetime
+    revoked_at: datetime | None
+    status: str
+    token: str
+    share_url: str
+
+
+class CashFlowShareLinkListResponse(BaseModel):
+    items: list[CashFlowShareLinkRead]
+
+
+class CashFlowPublicRow(BaseModel):
+    record_date: date
+    amount: Decimal
+    description: str | None
+    supplier: str | None
+    flat: str | None
+    has_invoice: bool
+    invoice_number: str | None
+    invoice_media_name: str | None
+    invoice_media_mime: str | None
+    invoice_media_url: str | None
+
+
+class CashFlowPublicShareResponse(BaseModel):
+    date_from: date
+    date_to: date
+    credit_total: Decimal
+    debit_total: Decimal
+    net_total: Decimal
+    items: list[CashFlowPublicRow]

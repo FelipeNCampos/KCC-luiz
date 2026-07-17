@@ -57,6 +57,41 @@ export type CashFlowReportPayload = {
   include_invoice_table: boolean;
 };
 
+export type CashFlowShareLink = {
+  id: string;
+  scope: CashFlowScope;
+  date_from: string;
+  date_to: string;
+  expires_at: string;
+  created_at: string;
+  revoked_at: string | null;
+  status: "active" | "expired" | "revoked";
+  token: string;
+  share_url: string;
+};
+
+export type CashFlowPublicRow = {
+  record_date: string;
+  amount: string;
+  description: string | null;
+  supplier: string | null;
+  flat: string | null;
+  has_invoice: boolean;
+  invoice_number: string | null;
+  invoice_media_name: string | null;
+  invoice_media_mime: string | null;
+  invoice_media_url: string | null;
+};
+
+export type CashFlowPublicShare = {
+  date_from: string;
+  date_to: string;
+  credit_total: string;
+  debit_total: string;
+  net_total: string;
+  items: CashFlowPublicRow[];
+};
+
 export const cashFlowService = {
   async list(params: { month: string; search?: string; scope?: CashFlowScope }) {
     const { data } = await api.get<CashFlowListResponse>("/cashflow", {
@@ -154,5 +189,32 @@ export const cashFlowService = {
       blob: data,
       contentType: headers["content-type"] as string | undefined
     };
+  },
+
+  async createShareLink(payload: { scope: CashFlowScope; date_from: string; date_to: string; expires_at: string }) {
+    const { data } = await api.post<CashFlowShareLink>("/cashflow/share-links", payload);
+    return data;
+  },
+
+  async listShareLinks(scope: CashFlowScope) {
+    const { data } = await api.get<{ items: CashFlowShareLink[] }>("/cashflow/share-links", {
+      params: { scope }
+    });
+    return data.items;
+  },
+
+  async revokeShareLink(linkId: string) {
+    const { data } = await api.delete<CashFlowShareLink>(`/cashflow/share-links/${linkId}`);
+    return data;
+  },
+
+  async getPublicShare(token: string) {
+    const { data } = await api.get<CashFlowPublicShare>(`/cashflow/shared/${token}`);
+    return data;
+  },
+
+  publicUrl(path: string) {
+    const baseUrl = api.defaults.baseURL ?? "/api/v1";
+    return `${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
   }
 };

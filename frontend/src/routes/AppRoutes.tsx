@@ -7,6 +7,7 @@ import { PrivateRoute } from "../components/PrivateRoute";
 import { TasksRoute } from "../components/TasksRoute";
 import { useAuth } from "../hooks/useAuth";
 import { CashFlowPage } from "../pages/CashFlowPage";
+import { CashFlowSharedPage } from "../pages/CashFlowSharedPage";
 import { ChecklistPage } from "../pages/ChecklistPage";
 import { CleanerAccessPage } from "../pages/CleanerAccessPage";
 import { CleanerPage } from "../pages/CleanerPage";
@@ -59,6 +60,7 @@ export function AppRoutes() {
       <Route path="/access" element={<GeneralAccessPage />} />
       <Route path="/stock-request" element={<StockRequestPage />} />
       <Route path="/instructions-public" element={<FlatInstructionsPage />} />
+      <Route path="/cash-flow/share/:token" element={<CashFlowSharedPage />} />
       <Route
         path="/"
         element={

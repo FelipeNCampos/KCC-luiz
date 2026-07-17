@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     LargeBinary,
     Numeric,
     String,
+    Text,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -59,3 +61,29 @@ class CashFlowRecord(Base):
     )
 
     created_by = relationship("User", back_populates="cashflow_records")
+
+
+class CashFlowShareLink(Base):
+    __tablename__ = "cashflow_share_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    condominio_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    cashflow_scope: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    date_from: Mapped[date] = mapped_column(Date, nullable=False)
+    date_to: Mapped[date] = mapped_column(Date, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    created_by = relationship("User", foreign_keys=[created_by_user_id])

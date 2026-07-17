@@ -17,5 +17,8 @@ export default defineConfig({
   preview: {
     host: true,
     allowedHosts: [".kccflats.com"]
+  },
+  test: {
+    environment: "jsdom"
   }
 });

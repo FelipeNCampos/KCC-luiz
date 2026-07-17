@@ -1,7 +1,9 @@
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from io import BytesIO
 
 import pytest
+from conftest import TestingSessionLocal
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 from reportlab.lib.pagesizes import A5
@@ -9,7 +11,7 @@ from reportlab.pdfgen import canvas
 
 from app.core.config import settings
 from app.models.user import User
-from conftest import TestingSessionLocal
+from app.services import cashflow_share_link_service
 
 
 def make_invoice_pdf(text: str = "Invoice") -> bytes:
@@ -49,10 +51,236 @@ def set_user_role(user_id: int, role: str) -> None:
         db.commit()
 
 
+def set_user_condominio(user_id: int, condominio_id: str) -> None:
+    with TestingSessionLocal() as db:
+        user = db.get(User, user_id)
+        assert user is not None
+        user.condominio_id = condominio_id
+        db.add(user)
+        db.commit()
+
+
 def get_admin_token(client: TestClient, email: str = "admin@example.com") -> str:
     auth_response = register_user(client, email)
     set_user_role(auth_response["user"]["id"], "admin")
     return login_user(client, email)
+
+
+def test_cashflow_share_link_exposes_current_inclusive_period_and_invoice(
+    client: TestClient,
+) -> None:
+    auth = register_user(client, "share-manager@example.com")
+    set_user_role(auth["user"]["id"], "manager")
+    set_user_condominio(auth["user"]["id"], "condo-a")
+    headers = {"Authorization": f"Bearer {login_user(client, 'share-manager@example.com')}"}
+
+    for payload in (
+        {"invoice": "No", "date": "2026-04-01", "value": "100.00", "description": "Opening"},
+        {"invoice": "No", "date": "2026-04-02", "value": "-25.00", "description": "Cost"},
+        {"invoice": "No", "date": "2026-04-03", "value": "999.00", "description": "Outside"},
+    ):
+        assert client.post("/api/v1/cashflow", headers=headers, data=payload).status_code == 201
+
+    invoice_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "Yes",
+            "date": "2026-04-02",
+            "value": "50.00",
+            "description": "Invoice in range",
+        },
+        files={
+            "invoice_media": ("receipt.pdf", make_invoice_pdf("Shared receipt"), "application/pdf")
+        },
+    )
+    assert invoice_response.status_code == 201
+
+    expires_at = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    create_response = client.post(
+        "/api/v1/cashflow/share-links",
+        headers=headers,
+        json={
+            "scope": "main",
+            "date_from": "2026-04-01",
+            "date_to": "2026-04-02",
+            "expires_at": expires_at,
+        },
+    )
+
+    assert create_response.status_code == 201
+    link = create_response.json()
+    assert link["status"] == "active"
+    assert link["share_url"].endswith(link["token"])
+
+    public_response = client.get(f"/api/v1/cashflow/shared/{link['token']}")
+    assert public_response.status_code == 200
+    body = public_response.json()
+    assert body["date_from"] == "2026-04-01"
+    assert body["date_to"] == "2026-04-02"
+    assert body["credit_total"] == "150.00"
+    assert body["debit_total"] == "-25.00"
+    assert body["net_total"] == "125.00"
+    assert [item["record_date"] for item in body["items"]] == [
+        "2026-04-01",
+        "2026-04-02",
+        "2026-04-02",
+    ]
+    invoice = next(item for item in body["items"] if item["description"] == "Invoice in range")
+    assert invoice["invoice_media_url"]
+    assert "created_by_user_id" not in invoice
+    assert "condominio_id" not in body
+
+    shared_invoice = client.get(invoice["invoice_media_url"])
+    assert shared_invoice.status_code == 200
+    assert shared_invoice.headers["content-type"] == "application/pdf"
+
+    assert (
+        client.post(
+            "/api/v1/cashflow",
+            headers=headers,
+            data={
+                "invoice": "No",
+                "date": "2026-04-02",
+                "value": "10.00",
+                "description": "Added later",
+            },
+        ).status_code
+        == 201
+    )
+    refreshed = client.get(f"/api/v1/cashflow/shared/{link['token']}")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["net_total"] == "135.00"
+
+
+def test_cashflow_share_links_are_condominio_scoped_and_revocable(client: TestClient) -> None:
+    manager_a = register_user(client, "share-manager-a@example.com")
+    set_user_role(manager_a["user"]["id"], "manager")
+    set_user_condominio(manager_a["user"]["id"], "condo-a")
+    headers_a = {"Authorization": f"Bearer {login_user(client, 'share-manager-a@example.com')}"}
+
+    expires_at = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    invalid_range = client.post(
+        "/api/v1/cashflow/share-links",
+        headers=headers_a,
+        json={"date_from": "2026-04-02", "date_to": "2026-04-01", "expires_at": expires_at},
+    )
+    assert invalid_range.status_code == 422
+
+    expired_at_creation = client.post(
+        "/api/v1/cashflow/share-links",
+        headers=headers_a,
+        json={
+            "date_from": "2026-04-01",
+            "date_to": "2026-04-02",
+            "expires_at": (datetime.now(UTC) - timedelta(minutes=1)).isoformat(),
+        },
+    )
+    assert expired_at_creation.status_code == 422
+
+    created = client.post(
+        "/api/v1/cashflow/share-links",
+        headers=headers_a,
+        json={"date_from": "2026-04-01", "date_to": "2026-04-02", "expires_at": expires_at},
+    )
+    assert created.status_code == 201
+    link = created.json()
+
+    listed = client.get("/api/v1/cashflow/share-links", headers=headers_a)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["share_url"] == link["share_url"]
+
+    manager_b = register_user(client, "share-manager-b@example.com")
+    set_user_role(manager_b["user"]["id"], "manager")
+    set_user_condominio(manager_b["user"]["id"], "condo-b")
+    headers_b = {"Authorization": f"Bearer {login_user(client, 'share-manager-b@example.com')}"}
+    assert client.get("/api/v1/cashflow/share-links", headers=headers_b).json()["items"] == []
+    assert (
+        client.delete(f"/api/v1/cashflow/share-links/{link['id']}", headers=headers_b).status_code
+        == 404
+    )
+
+    revoked = client.delete(f"/api/v1/cashflow/share-links/{link['id']}", headers=headers_a)
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+    assert client.get(f"/api/v1/cashflow/shared/{link['token']}").status_code == 404
+
+    register_user(client, "share-user@example.com")
+    headers_user = {"Authorization": f"Bearer {login_user(client, 'share-user@example.com')}"}
+    assert (
+        client.post(
+            "/api/v1/cashflow/share-links",
+            headers=headers_user,
+            json={"date_from": "2026-04-01", "date_to": "2026-04-02", "expires_at": expires_at},
+        ).status_code
+        == 403
+    )
+
+
+def test_cashflow_share_link_is_listed_as_expired_and_publicly_unavailable(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    auth = register_user(client, "share-expiry-manager@example.com")
+    set_user_role(auth["user"]["id"], "manager")
+    headers = {"Authorization": f"Bearer {login_user(client, 'share-expiry-manager@example.com')}"}
+    expires_at = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    created = client.post(
+        "/api/v1/cashflow/share-links",
+        headers=headers,
+        json={"date_from": "2026-04-01", "date_to": "2026-04-01", "expires_at": expires_at},
+    )
+    assert created.status_code == 201
+    link = created.json()
+
+    monkeypatch.setattr(
+        cashflow_share_link_service, "now_utc", lambda: datetime.now(UTC) + timedelta(days=1)
+    )
+    listed = client.get("/api/v1/cashflow/share-links", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["status"] == "expired"
+    assert client.get(f"/api/v1/cashflow/shared/{link['token']}").status_code == 404
+
+
+def test_cashflow_share_links_are_listed_only_for_the_selected_scope(client: TestClient) -> None:
+    manager_token = get_admin_token(client, email="share-scope-manager@example.com")
+    headers = {"Authorization": f"Bearer {manager_token}"}
+    expires_at = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+
+    main_link = client.post(
+        "/api/v1/cashflow/share-links",
+        headers=headers,
+        json={
+            "scope": "main",
+            "date_from": "2026-04-01",
+            "date_to": "2026-04-01",
+            "expires_at": expires_at,
+        },
+    )
+    cashflow_52_link = client.post(
+        "/api/v1/cashflow/share-links",
+        headers=headers,
+        json={
+            "scope": "cashflow52",
+            "date_from": "2026-04-01",
+            "date_to": "2026-04-01",
+            "expires_at": expires_at,
+        },
+    )
+    assert main_link.status_code == 201
+    assert cashflow_52_link.status_code == 201
+
+    main_links = client.get(
+        "/api/v1/cashflow/share-links", headers=headers, params={"scope": "main"}
+    )
+    cashflow_52_links = client.get(
+        "/api/v1/cashflow/share-links", headers=headers, params={"scope": "cashflow52"}
+    )
+
+    assert [item["id"] for item in main_links.json()["items"]] == [main_link.json()["id"]]
+    assert [item["id"] for item in cashflow_52_links.json()["items"]] == [
+        cashflow_52_link.json()["id"]
+    ]
 
 
 def test_create_record_increment_and_sign_rules(client: TestClient) -> None:
@@ -321,9 +549,7 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
     )
     assert scoped_list.status_code == 200
     assert scoped_list.json()["monthly_total"] == "25.00"
-    assert [item["description"] for item in scoped_list.json()["items"]] == [
-        "Cashflow 52 record"
-    ]
+    assert [item["description"] for item in scoped_list.json()["items"]] == ["Cashflow 52 record"]
     assert scoped_list.json()["items"][0]["supplier"] == "Supplier 52"
     assert scoped_list.json()["items"][0]["flat"] is None
 
@@ -454,7 +680,12 @@ def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> No
     update_response = client.patch(
         f"/api/v1/cashflow/{record['id']}",
         headers=headers,
-        json={"value": "125.00", "description": "Updated comment", "supplier": "Updated supplier", "flat": "F505"},
+        json={
+            "value": "125.00",
+            "description": "Updated comment",
+            "supplier": "Updated supplier",
+            "flat": "F505",
+        },
     )
     assert update_response.status_code == 200
     assert update_response.json()["amount"] == "125.00"

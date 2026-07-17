@@ -5,6 +5,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.models.cashflow import CashFlowRecord
+from app.models.user import User
 
 
 class CashFlowRepository:
@@ -77,3 +78,50 @@ class CashFlowRepository:
         )
         total = self.db.scalar(statement)
         return Decimal(total or 0)
+
+    def list_records_for_public_share(
+        self,
+        start_date: date,
+        end_date: date,
+        cashflow_scope: str,
+        condominio_id: str,
+    ) -> list[CashFlowRecord]:
+        statement: Select[tuple[CashFlowRecord]] = (
+            select(CashFlowRecord)
+            .join(User, CashFlowRecord.created_by_user_id == User.id)
+            .where(
+                CashFlowRecord.record_date >= start_date,
+                CashFlowRecord.record_date < end_date,
+                CashFlowRecord.cashflow_scope == cashflow_scope,
+            )
+            .order_by(CashFlowRecord.record_date.asc(), CashFlowRecord.id.asc())
+        )
+        if condominio_id == "legacy":
+            statement = statement.where(User.condominio_id.is_(None))
+        else:
+            statement = statement.where(User.condominio_id == condominio_id)
+        return list(self.db.scalars(statement).all())
+
+    def get_record_for_public_share(
+        self,
+        record_id: int,
+        start_date: date,
+        end_date: date,
+        cashflow_scope: str,
+        condominio_id: str,
+    ) -> CashFlowRecord | None:
+        statement: Select[tuple[CashFlowRecord]] = (
+            select(CashFlowRecord)
+            .join(User, CashFlowRecord.created_by_user_id == User.id)
+            .where(
+                CashFlowRecord.id == record_id,
+                CashFlowRecord.record_date >= start_date,
+                CashFlowRecord.record_date < end_date,
+                CashFlowRecord.cashflow_scope == cashflow_scope,
+            )
+        )
+        if condominio_id == "legacy":
+            statement = statement.where(User.condominio_id.is_(None))
+        else:
+            statement = statement.where(User.condominio_id == condominio_id)
+        return self.db.scalar(statement)

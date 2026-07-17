@@ -3,6 +3,7 @@ import { AxiosError } from "axios";
 import { CircleDollarSign, FileSpreadsheet, Pencil, Plus, Search, Upload, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
+import { CashFlowShareLinksPanel } from "../components/CashFlowShareLinksPanel";
 import { cashFlowService, CashFlowListResponse, CashFlowRow, CashFlowScope } from "../services/cashflow";
 
 type FormState = {
@@ -631,6 +632,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
             <FileSpreadsheet size={18} />
             Report
           </button>
+          <CashFlowShareLinksPanel scope={scope} defaultDate={`${month}-01`} />
         </div>
       </section>
 

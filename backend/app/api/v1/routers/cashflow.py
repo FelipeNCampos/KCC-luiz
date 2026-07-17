@@ -18,20 +18,33 @@ from app.api.deps import require_roles
 from app.db.session import get_db
 from app.models.user import User
 from app.repositories.cashflow_repository import CashFlowRepository
+from app.repositories.cashflow_share_link_repository import CashFlowShareLinkRepository
 from app.schemas.auth import MessageResponse
 from app.schemas.cashflow import (
     CashFlowCreate,
     CashFlowListResponse,
     CashFlowNextPaymentNumberResponse,
+    CashFlowPublicShareResponse,
     CashFlowReportPreviewRequest,
     CashFlowReportRequest,
     CashFlowRow,
+    CashFlowShareLinkCreate,
+    CashFlowShareLinkListResponse,
+    CashFlowShareLinkRead,
     CashFlowUpdate,
 )
 from app.services.cashflow_service import CashFlowService
+from app.services.cashflow_share_link_service import CashFlowShareLinkService
 
 router = APIRouter()
 MAX_INVOICE_BYTES = 10 * 1024 * 1024
+
+
+def share_link_service(db: Session) -> CashFlowShareLinkService:
+    return CashFlowShareLinkService(
+        CashFlowShareLinkRepository(db),
+        CashFlowRepository(db),
+    )
 
 
 def _parse_invoice_flag(value: str) -> bool:
@@ -64,7 +77,9 @@ def list_cashflow_records(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_roles("admin", "manager"))],
     month: Annotated[str | None, Query(description="Month in format YYYY-MM")] = None,
-    search: Annotated[str | None, Query(description="Search by description, supplier or flat")] = None,
+    search: Annotated[
+        str | None, Query(description="Search by description, supplier or flat")
+    ] = None,
     scope: Annotated[str | None, Query(description="Cashflow scope")] = None,
 ) -> CashFlowListResponse:
     service = CashFlowService(CashFlowRepository(db))
@@ -243,6 +258,59 @@ def preview_cashflow_report(
     )
     headers = {"Content-Disposition": f'inline; filename="cashflow-report-{period_label}.pdf"'}
     return Response(content=report_data, media_type="application/pdf", headers=headers)
+
+
+@router.post(
+    "/share-links", response_model=CashFlowShareLinkRead, status_code=status.HTTP_201_CREATED
+)
+def create_cashflow_share_link(
+    payload: CashFlowShareLinkCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_roles("admin", "manager"))],
+) -> CashFlowShareLinkRead:
+    return share_link_service(db).create(current_user, payload)
+
+
+@router.get("/share-links", response_model=CashFlowShareLinkListResponse)
+def list_cashflow_share_links(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_roles("admin", "manager"))],
+    scope: Annotated[str | None, Query(description="Cashflow scope")] = None,
+) -> CashFlowShareLinkListResponse:
+    return CashFlowShareLinkListResponse(
+        items=share_link_service(db).list_links(current_user, scope)
+    )
+
+
+@router.delete("/share-links/{link_id}", response_model=CashFlowShareLinkRead)
+def revoke_cashflow_share_link(
+    link_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_roles("admin", "manager"))],
+) -> CashFlowShareLinkRead:
+    return share_link_service(db).revoke(current_user, link_id)
+
+
+@router.get("/shared/{token}", response_model=CashFlowPublicShareResponse)
+def get_public_cashflow_share(
+    token: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> CashFlowPublicShareResponse:
+    return share_link_service(db).public_view(token)
+
+
+@router.get("/shared/{token}/records/{record_id}/invoice")
+def get_public_cashflow_invoice(
+    token: str,
+    record_id: int,
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    file_name, media_type, data = share_link_service(db).public_invoice(token, record_id)
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{file_name}"'},
+    )
 
 
 @router.delete("/{record_id}", response_model=MessageResponse)
