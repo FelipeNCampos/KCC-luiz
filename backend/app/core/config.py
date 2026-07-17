@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     refresh_cookie_name: str = "kcc_refresh_token"
     cashflow_share_token_encryption_key: str = DEV_CASHFLOW_SHARE_TOKEN_ENCRYPTION_KEY
-    cashflow_share_public_base_url: str = "http://localhost:15173"
     cookie_secure: bool = False
     cookie_samesite: str = "lax"
     cors_origins: str = "http://localhost:15173,http://localhost:18081"
@@ -79,6 +78,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
+
+    @property
+    def cashflow_share_public_base_url(self) -> str:
+        return "https://kccflats.com" if self.is_production else "http://localhost:15173"
 
     @property
     def cors_origin_list(self) -> list[str]:
