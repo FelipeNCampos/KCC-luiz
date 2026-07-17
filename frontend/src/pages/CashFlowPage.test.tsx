@@ -54,8 +54,15 @@ describe("CashFlowPage record movement", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
-  it("moves a record from the main cashflow to Cashflow 52", async () => {
+  it("reveals record actions from the clicked row and moves it to Cashflow 52", async () => {
     render(<CashFlowPage />);
+
+    expect(screen.queryByRole("columnheader", { name: "Action" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Move to Cashflow 52" })).toBeNull();
+
+    const recordRow = (await screen.findByText("Added to the wrong cashflow")).closest("tr");
+    expect(recordRow).not.toBeNull();
+    fireEvent.click(recordRow!);
 
     fireEvent.click(await screen.findByRole("button", { name: "Move to Cashflow 52" }));
 

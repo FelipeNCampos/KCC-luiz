@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AxiosError } from "axios";
 import { CircleDollarSign, FileSpreadsheet, Pencil, Plus, Search, Upload, X } from "lucide-react";
 
@@ -129,8 +129,9 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
   const [savingText, setSavingText] = useState(false);
   const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
-  const tableColumnCount = showFlat ? 9 : 8;
-  const tableMinWidthClass = showFlat ? "min-w-[1120px]" : "min-w-[980px]";
+  const [expandedActionRecordId, setExpandedActionRecordId] = useState<number | null>(null);
+  const tableColumnCount = showFlat ? 8 : 7;
+  const tableMinWidthClass = showFlat ? "min-w-[1000px]" : "min-w-[860px]";
   const summaryLeadingColumnSpan = showFlat ? 6 : 5;
   const moveTargetScope: CashFlowScope = scope === "main" ? "cashflow52" : "main";
   const moveTargetTitle = scope === "main" ? "Cashflow 52" : "Main Cashflow";
@@ -329,6 +330,10 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       const axiosError = requestError as AxiosError<{ detail?: string }>;
       setFeedback({ type: "error", message: axiosError.response?.data?.detail ?? "Unable to move record." });
     }
+  }
+
+  function toggleRecordActions(recordId: number) {
+    setExpandedActionRecordId((current) => (current === recordId ? null : recordId));
   }
 
   async function handleOpenInvoiceEditor(row: CashFlowRow) {
@@ -675,7 +680,6 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 <th className="px-4 py-3 font-extrabold">Supplier</th>
                 {showFlat ? <th className="px-4 py-3 font-extrabold">Flat</th> : null}
                 <th className="px-4 py-3 font-extrabold text-right">Balance</th>
-                <th className="px-4 py-3 font-extrabold">Action</th>
               </tr>
             </thead>
 
@@ -696,10 +700,10 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 <>
                   {data.items.length > 0 ? (
                     data.items.map((row) => (
+                      <Fragment key={row.id}>
                       <tr
-                        key={row.id}
                         className="cursor-pointer bg-white transition-colors hover:bg-oak-surface"
-                        onClick={() => openTextEditor(row)}
+                        onClick={() => toggleRecordActions(row.id)}
                       >
                         <td className="px-4 py-3 text-sm font-bold text-oak-coffee">#{row.payment_number}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-oak-coffee">
@@ -781,8 +785,12 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                         >
                           {formatAbsoluteCurrency(row.balance)}
                         </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                          <div className="flex flex-wrap gap-2">
+                      </tr>
+                      {expandedActionRecordId === row.id ? (
+                        <tr className="bg-oak-surface">
+                          <td className="px-4 py-3" colSpan={tableColumnCount}>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="mr-1 text-xs font-extrabold uppercase tracking-[0.08em] text-oak-muted">Actions</span>
                           <button
                             className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
                             type="button"
@@ -803,9 +811,11 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                           >
                             Delete
                           </button>
-                          </div>
-                        </td>
-                      </tr>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                      </Fragment>
                     ))
                   ) : (
                     <tr>
@@ -824,7 +834,6 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                     >
                       {currentBalance}
                     </td>
-                    <td className="bg-oak-panel px-4 py-3" />
                   </tr>
                 </>
               ) : null}
