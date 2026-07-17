@@ -132,6 +132,8 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const tableColumnCount = showFlat ? 9 : 8;
   const tableMinWidthClass = showFlat ? "min-w-[1120px]" : "min-w-[980px]";
   const summaryLeadingColumnSpan = showFlat ? 6 : 5;
+  const moveTargetScope: CashFlowScope = scope === "main" ? "cashflow52" : "main";
+  const moveTargetTitle = scope === "main" ? "Cashflow 52" : "Main Cashflow";
 
   useEffect(() => {
     let active = true;
@@ -312,6 +314,20 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     } catch (requestError) {
       const axiosError = requestError as AxiosError<{ detail?: string }>;
       setFeedback({ type: "error", message: axiosError.response?.data?.detail ?? "Unable to delete record." });
+    }
+  }
+
+  async function handleMoveRecord(recordId: number) {
+    if (!window.confirm(`Move this record to ${moveTargetTitle}?`)) return;
+
+    setFeedback(null);
+    try {
+      await cashFlowService.update(recordId, { scope: moveTargetScope });
+      setFeedback({ type: "success", message: `Record moved to ${moveTargetTitle}.` });
+      await reload();
+    } catch (requestError) {
+      const axiosError = requestError as AxiosError<{ detail?: string }>;
+      setFeedback({ type: "error", message: axiosError.response?.data?.detail ?? "Unable to move record." });
     }
   }
 
@@ -766,6 +782,17 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                           {formatAbsoluteCurrency(row.balance)}
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/70">
+                          <div className="flex flex-wrap gap-2">
+                          <button
+                            className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleMoveRecord(row.id);
+                            }}
+                          >
+                            Move to {moveTargetTitle}
+                          </button>
                           <button
                             className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
                             type="button"
@@ -776,6 +803,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                           >
                             Delete
                           </button>
+                          </div>
                         </td>
                       </tr>
                     ))

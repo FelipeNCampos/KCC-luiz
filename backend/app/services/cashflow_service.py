@@ -162,6 +162,10 @@ class CashFlowService:
                 detail="Cash flow record not found",
             )
 
+        if "scope" in payload.model_fields_set:
+            record.cashflow_scope = self._normalize_scope(payload.scope)
+            if not self._scope_has_flat(record.cashflow_scope):
+                record.flat = None
         if "description" in payload.model_fields_set:
             record.description = self._clean_optional_text(payload.description)
         if "supplier" in payload.model_fields_set:

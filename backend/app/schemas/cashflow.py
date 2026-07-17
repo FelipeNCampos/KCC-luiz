@@ -24,6 +24,7 @@ class CashFlowCreate(BaseModel):
 
 class CashFlowUpdate(BaseModel):
     value: Decimal | None = None
+    scope: str | None = None
     description: str | None = Field(default=None, max_length=255)
     supplier: str | None = Field(default=None, max_length=255)
     flat: str | None = Field(default=None, max_length=120)

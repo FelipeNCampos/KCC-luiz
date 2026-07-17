@@ -726,6 +726,41 @@ def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> No
     assert invoice_number_only_response.json()["invoice_number"] == "INV-901"
 
 
+def test_update_record_moves_it_to_another_cashflow(client: TestClient) -> None:
+    admin_token = get_admin_token(client, email="move-record-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    created = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "No",
+            "date": "2026-04-12",
+            "value": "75.00",
+            "flat": "Flat 50",
+        },
+    )
+    assert created.status_code == 201
+    record_id = created.json()["id"]
+
+    moved = client.patch(
+        f"/api/v1/cashflow/{record_id}",
+        headers=headers,
+        json={"scope": "cashflow52"},
+    )
+    assert moved.status_code == 200
+    assert moved.json()["flat"] is None
+
+    main_records = client.get(
+        "/api/v1/cashflow", headers=headers, params={"month": "2026-04", "scope": "main"}
+    )
+    cashflow_52_records = client.get(
+        "/api/v1/cashflow", headers=headers, params={"month": "2026-04", "scope": "cashflow52"}
+    )
+    assert main_records.json()["items"] == []
+    assert [item["id"] for item in cashflow_52_records.json()["items"]] == [record_id]
+
+
 def test_delete_record(client: TestClient) -> None:
     admin_token = get_admin_token(client, email="delete-admin@example.com")
     headers = {"Authorization": f"Bearer {admin_token}"}

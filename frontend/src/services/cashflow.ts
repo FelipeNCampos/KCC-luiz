@@ -42,6 +42,7 @@ export type CreateCashFlowPayload = {
 };
 
 export type UpdateCashFlowPayload = {
+  scope?: CashFlowScope;
   value?: string | null;
   description?: string | null;
   supplier?: string | null;
