@@ -88,8 +88,14 @@ services:
     ports:
       - "${FRONTEND_PUBLIC_PORT:-15173}:5173"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     command: sh ./scripts/dev-start.sh
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/health >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     develop:
       watch:
         - action: sync
@@ -118,8 +124,10 @@ services:
     container_name: kcc_proxy_dev
     restart: always
     depends_on:
-      - frontend
-      - backend
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     ports:
       - "${PUBLIC_HTTP_PORT:-18080}:80"
     volumes:

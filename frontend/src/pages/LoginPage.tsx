@@ -108,6 +108,8 @@ export function LoginPage() {
       const message =
         error instanceof AxiosError && error.response?.status === 401
           ? "Invalid email or password."
+          : error instanceof AxiosError && [502, 503, 504].includes(error.response?.status ?? 0)
+            ? "The service is starting. Please try again in a few seconds."
           : "Unable to log in right now.";
       setErrors((current) => ({ ...current, form: message }));
     } finally {
