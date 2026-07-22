@@ -23,6 +23,7 @@ from app.models.oakhill import (
     MaintenanceCategory,
     MaintenanceRecord,
     MaintenanceSchedule,
+    UtilityReading,
 )
 from app.models.user import User
 from app.schemas.oakhill import (
@@ -59,6 +60,8 @@ from app.schemas.oakhill import (
     MaintenanceRecordRead,
     MaintenanceScheduleCreate,
     MaintenanceScheduleRead,
+    UtilityReadingBatchCreate,
+    UtilityReadingRead,
 )
 from app.services.sms_service import normalize_phone, send_sms_notification
 
@@ -130,6 +133,86 @@ def resolve_public_flat(db: Session, value: str, condominio_id: str | None = Non
         db.commit()
         db.refresh(building)
     return building
+
+
+def utility_reading_read(row: UtilityReading, building: Building, previous: UtilityReading | None, prior: UtilityReading | None) -> UtilityReadingRead:
+    energy_used = row.energy - previous.energy if previous else None
+    gas_used = row.gas - previous.gas if previous else None
+    previous_energy_used = previous.energy - prior.energy if previous and prior else None
+    previous_gas_used = previous.gas - prior.gas if previous and prior else None
+    return UtilityReadingRead(
+        id=row.id,
+        flat=building.nome.removeprefix("Flat ").strip(),
+        building_name=building.nome,
+        reading_date=row.reading_date,
+        days=(row.reading_date - previous.reading_date).days if previous else None,
+        energy=row.energy,
+        energy_used=energy_used,
+        energy_change_percent=round(((energy_used / previous_energy_used) - 1) * 100, 2) if energy_used is not None and previous_energy_used else None,
+        gas=row.gas,
+        gas_used=gas_used,
+        gas_change_percent=round(((gas_used / previous_gas_used) - 1) * 100, 2) if gas_used is not None and previous_gas_used else None,
+    )
+
+
+@router.get("/readings")
+def list_utility_readings(
+    flat: str = "50",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(manager_user),
+) -> dict[str, list[UtilityReadingRead] | int]:
+    condominio_id = user_condominio_id(db, current_user)
+    building = resolve_public_flat(db, flat, condominio_id)
+    rows = list(
+        db.scalars(
+            select(UtilityReading)
+            .where(UtilityReading.condominio_id == condominio_id, UtilityReading.building_id == building.id)
+            .order_by(UtilityReading.reading_date.asc())
+        )
+    )
+    comparisons = [
+        utility_reading_read(row, building, rows[index - 1] if index else None, rows[index - 2] if index > 1 else None)
+        for index, row in enumerate(rows)
+    ]
+    comparisons.reverse()
+    return {"data": comparisons, "count": len(comparisons)}
+
+
+@router.post("/readings", status_code=status.HTTP_201_CREATED)
+def create_utility_readings(
+    payload: UtilityReadingBatchCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(manager_user),
+) -> dict[str, list[UtilityReadingRead] | int]:
+    if {reading.flat for reading in payload.readings} != set(PUBLIC_FLATS):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Readings for Flats 50, 51 and 52 are required")
+    condominio_id = user_condominio_id(db, current_user)
+    buildings = {flat: resolve_public_flat(db, flat, condominio_id) for flat in PUBLIC_FLATS}
+    if db.scalar(
+        select(UtilityReading).where(
+            UtilityReading.condominio_id == condominio_id,
+            UtilityReading.reading_date == payload.reading_date,
+            UtilityReading.building_id.in_([building.id for building in buildings.values()]),
+        )
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A reading already exists for this date")
+    rows = [
+        UtilityReading(
+            reading_date=payload.reading_date,
+            energy=reading.energy,
+            gas=reading.gas,
+            building_id=buildings[reading.flat].id,
+            condominio_id=condominio_id,
+        )
+        for reading in payload.readings
+    ]
+    db.add_all(rows)
+    db.commit()
+    db.refresh(rows[0])
+    return {
+        "data": [utility_reading_read(row, buildings[reading.flat], None, None) for row, reading in zip(rows, payload.readings)],
+        "count": len(rows),
+    }
 
 
 def active_cleaner(db: Session, condominio_id: str | None = None) -> Funcionario:

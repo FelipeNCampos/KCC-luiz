@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -32,6 +32,19 @@ class Building(Base):
 
     condominio: Mapped["Condominio"] = relationship("Condominio", back_populates="buildings")
     acessos: Mapped[list["Acess"]] = relationship("Acess", back_populates="building")
+
+
+class UtilityReading(Base):
+    __tablename__ = "utility_readings"
+    __table_args__ = (UniqueConstraint("building_id", "reading_date", name="uq_utility_reading_building_date"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
+    reading_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    energy: Mapped[int] = mapped_column(Integer, nullable=False)
+    gas: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    building_id: Mapped[str] = mapped_column(String(36), ForeignKey("buildings.id"), nullable=False, index=True)
+    condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
 
 
 class Funcionario(Base):

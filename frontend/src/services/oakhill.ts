@@ -81,6 +81,19 @@ export type MaintenanceRecord = {
   out_at: string | null;
   condominio_id: string;
 };
+export type UtilityReading = {
+  id: string;
+  flat: string;
+  building_name: string;
+  reading_date: string;
+  days: number | null;
+  energy: number;
+  energy_used: number | null;
+  energy_change_percent: number | null;
+  gas: number;
+  gas_used: number | null;
+  gas_change_percent: number | null;
+};
 export type ContractorHistoryCategory = { id: string; name: string; created_at: string; updated_at: string; condominio_id: string };
 export type ContractorHistory = {
   id: string;
@@ -228,6 +241,14 @@ export const oakhillService = {
   },
   async maintenanceHistory() {
     const { data } = await api.get<ApiList<MaintenanceRecord>>("/contractor-access/maintenance/history");
+    return data;
+  },
+  async readings(flat = "50") {
+    const { data } = await api.get<ApiList<UtilityReading>>("/readings", { params: { flat } });
+    return data;
+  },
+  async saveReadings(payload: { reading_date: string; readings: Array<{ flat: "50" | "51" | "52"; energy: number; gas: number }> }) {
+    const { data } = await api.post<ApiList<UtilityReading>>("/readings", payload);
     return data;
   },
   async flatChecklist(flat: string) {

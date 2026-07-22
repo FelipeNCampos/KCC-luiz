@@ -3,6 +3,7 @@ import {
   Building2,
   BookOpen,
   CircleDollarSign,
+  Gauge,
   HardHat,
   LayoutDashboard,
   ListChecks,
@@ -96,6 +97,11 @@ export function SidebarMenu() {
               <NavLink to="/stock" className={navItemClass}>
                 <Package size={18} strokeWidth={2.1} />
                 <span>Stock</span>
+              </NavLink>
+
+              <NavLink to="/readings" className={navItemClass}>
+                <Gauge size={18} strokeWidth={2.1} />
+                <span>Readings</span>
               </NavLink>
 
               <NavLink to="/instructions" className={navItemClass}>

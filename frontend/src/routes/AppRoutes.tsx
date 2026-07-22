@@ -20,6 +20,7 @@ import { InstructionsPage } from "../pages/InstructionsPage";
 import { LoginPage } from "../pages/LoginPage";
 import { QrCodesPage } from "../pages/QrCodesPage";
 import { RegisterPage } from "../pages/RegisterPage";
+import { ReadingsFormPage, ReadingsPage } from "../pages/ReadingsPage";
 import { StockPage } from "../pages/StockPage";
 import { StockRequestPage } from "../pages/StockRequestPage";
 import { TasksPage } from "../pages/TasksPage";
@@ -139,6 +140,26 @@ export function AppRoutes() {
           <PrivateRoute>
             <OakHillRoute>
               <StockPage />
+            </OakHillRoute>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/readings"
+        element={
+          <PrivateRoute>
+            <OakHillRoute>
+              <ReadingsPage />
+            </OakHillRoute>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/readings/new"
+        element={
+          <PrivateRoute>
+            <OakHillRoute>
+              <ReadingsFormPage />
             </OakHillRoute>
           </PrivateRoute>
         }

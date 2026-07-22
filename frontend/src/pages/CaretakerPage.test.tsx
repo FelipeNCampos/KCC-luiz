@@ -52,6 +52,7 @@ describe("CaretakerPage record editing", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Maintenance" })[0]);
 
     expect(await screen.findByRole("heading", { name: "Maintenance" })).toBeTruthy();
+    expect(screen.getByText("Track scheduled contractor maintenance and completed IN/OUT records.")).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Category" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Tag" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Report" })).toBeTruthy();
@@ -64,6 +65,15 @@ describe("CaretakerPage record editing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save category" }));
 
     await waitFor(() => expect(oakhillService.createMaintenanceCategory).toHaveBeenCalledWith("Plumbing"));
+  });
+
+  it("shows the maintenance schedule status legend without the cellphone column", async () => {
+    render(<CaretakerPage />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Maintenance" })[0]);
+
+    expect(await screen.findByText("Green is on schedule. Red means the last completed maintenance is past its frequency.")).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Cellphone" })).toBeNull();
   });
 
   it("shows schedule status and the automatic contractor history in separate tabs", async () => {

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -157,6 +157,31 @@ class ContractorVisitUpdate(BaseModel):
     mobile: str | None = None
     in_at: datetime | None = None
     out_at: datetime | None = None
+
+
+class UtilityReadingInput(BaseModel):
+    flat: Literal["50", "51", "52"]
+    energy: int = Field(ge=0)
+    gas: int = Field(ge=0)
+
+
+class UtilityReadingBatchCreate(BaseModel):
+    reading_date: date
+    readings: list[UtilityReadingInput] = Field(min_length=3, max_length=3)
+
+
+class UtilityReadingRead(BaseModel):
+    id: str
+    flat: str
+    building_name: str
+    reading_date: date
+    days: int | None
+    energy: int
+    energy_used: int | None
+    energy_change_percent: float | None
+    gas: int
+    gas_used: int | None
+    gas_change_percent: float | None
 
 
 class MaintenanceCategoryCreate(BaseModel):

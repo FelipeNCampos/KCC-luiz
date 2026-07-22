@@ -211,3 +211,42 @@ def test_maintenance_schedule_creates_and_completes_history_from_contractor_acce
 
     overdue_schedule = client.get("/api/v1/contractor-access/maintenance", headers=headers)
     assert overdue_schedule.json()["data"][0]["is_overdue"] is True
+
+
+def test_readings_compare_energy_and_gas_consumption_for_each_flat(client: TestClient) -> None:
+    token = get_admin_token(client, email="readings-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    for reading_date, flat_50_energy, flat_50_gas in [
+        ("2025-11-03", 5265, 31780),
+        ("2025-12-01", 5291, 32016),
+        ("2026-01-06", 5340, 32309),
+    ]:
+        response = client.post(
+            "/api/v1/readings",
+            headers=headers,
+            json={
+                "reading_date": reading_date,
+                "readings": [
+                    {"flat": "50", "energy": flat_50_energy, "gas": flat_50_gas},
+                    {"flat": "51", "energy": 1000, "gas": 2000},
+                    {"flat": "52", "energy": 3000, "gas": 4000},
+                ],
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["count"] == 3
+
+    list_response = client.get("/api/v1/readings", headers=headers, params={"flat": "50"})
+
+    assert list_response.status_code == 200
+    latest = list_response.json()["data"][0]
+    assert latest["flat"] == "50"
+    assert latest["building_name"] == "Flat 50"
+    assert latest["days"] == 36
+    assert latest["energy"] == 5340
+    assert latest["energy_used"] == 49
+    assert latest["energy_change_percent"] == 88.46
+    assert latest["gas"] == 32309
+    assert latest["gas_used"] == 293
+    assert latest["gas_change_percent"] == 24.15
