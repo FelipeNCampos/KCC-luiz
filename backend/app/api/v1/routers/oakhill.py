@@ -20,6 +20,9 @@ from app.models.oakhill import (
     CleanerCheckoutChecklistItem,
     FlatChecklistItem,
     Funcionario,
+    MaintenanceCategory,
+    MaintenanceRecord,
+    MaintenanceSchedule,
 )
 from app.models.user import User
 from app.schemas.oakhill import (
@@ -43,6 +46,7 @@ from app.schemas.oakhill import (
     ContractorMediaUpdate,
     ContractorOpenVisit,
     ContractorPublicVisit,
+    ContractorVisitUpdate,
     ContractorVisitRead,
     ExecuteDueRead,
     FlatChecklistItemRead,
@@ -50,6 +54,11 @@ from app.schemas.oakhill import (
     FuncionarioCreate,
     FuncionarioRead,
     FuncionarioUpdate,
+    MaintenanceCategoryCreate,
+    MaintenanceCategoryRead,
+    MaintenanceRecordRead,
+    MaintenanceScheduleCreate,
+    MaintenanceScheduleRead,
 )
 from app.services.sms_service import normalize_phone, send_sms_notification
 
@@ -61,6 +70,10 @@ PUBLIC_FLATS = ("50", "51", "52")
 
 def now_utc() -> datetime:
     return datetime.now(UTC)
+
+
+def as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def manager_user(current_user: User = Depends(get_current_user)) -> User:
@@ -603,6 +616,68 @@ def contractor_flat(building_name: str) -> str:
     return building_name.strip().removeprefix("Flat ").strip()
 
 
+def maintenance_schedule_read(
+    row: MaintenanceSchedule, latest: MaintenanceRecord | None = None
+) -> MaintenanceScheduleRead:
+    is_overdue = False
+    if latest is not None:
+        due_date = now_utc().date() - timedelta(days=row.frequency_days)
+        is_overdue = latest.in_at.date() < due_date
+    return MaintenanceScheduleRead(
+        id=row.id,
+        category_id=row.category_id,
+        category_name=row.category.name,
+        tag=row.tag,
+        report=row.report,
+        frequency_days=row.frequency_days,
+        notes=row.notes,
+        cellphone=row.cellphone,
+        latest_in_at=latest.in_at if latest else None,
+        latest_out_at=latest.out_at if latest else None,
+        is_overdue=is_overdue,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        condominio_id=row.condominio_id,
+    )
+
+
+def maintenance_record_read(row: MaintenanceRecord) -> MaintenanceRecordRead:
+    return MaintenanceRecordRead(
+        id=row.id,
+        maintenance_id=row.maintenance_id,
+        category_name=row.maintenance.category.name,
+        tag=row.maintenance.tag,
+        report=row.maintenance.report,
+        contractor_visit_id=row.contractor_visit_id,
+        contractor_name=row.contractor_visit.name,
+        contractor_mobile=row.contractor_visit.mobile,
+        in_at=row.in_at,
+        out_at=row.out_at,
+        condominio_id=row.condominio_id,
+    )
+
+
+def create_maintenance_records_for_visit(db: Session, visit: ContractorVisit) -> None:
+    mobile = normalize_mobile_digits(visit.mobile)
+    schedules = list(
+        db.scalars(
+            select(MaintenanceSchedule).where(
+                MaintenanceSchedule.condominio_id == visit.condominio_id,
+                MaintenanceSchedule.cellphone == mobile,
+            )
+        )
+    )
+    for schedule in schedules:
+        db.add(
+            MaintenanceRecord(
+                condominio_id=visit.condominio_id,
+                maintenance_id=schedule.id,
+                contractor_visit_id=visit.id,
+                in_at=visit.in_at,
+            )
+        )
+
+
 def public_visit(row: ContractorVisit) -> ContractorPublicVisit:
     return ContractorPublicVisit(
         id=row.id,
@@ -766,6 +841,8 @@ def contractor_check_in(payload: ContractorCheckIn, db: Session = Depends(get_db
         in_at=now_utc(),
     )
     db.add(row)
+    db.flush()
+    create_maintenance_records_for_visit(db, row)
     db.commit()
     db.refresh(row)
     return public_visit(row)
@@ -781,10 +858,16 @@ def contractor_check_out(payload: ContractorCheckOut, db: Session = Depends(get_
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contractor visit not found")
     if row.out_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contractor already checked out")
-    out_at = payload.out_at.astimezone(UTC) if payload.out_at else now_utc()
-    if out_at <= row.in_at:
+    out_at = as_utc(payload.out_at) if payload.out_at else now_utc()
+    if out_at <= as_utc(row.in_at):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="out_at must be after in_at")
     row.out_at = out_at
+    maintenance_records = list(
+        db.scalars(select(MaintenanceRecord).where(MaintenanceRecord.contractor_visit_id == row.id))
+    )
+    for maintenance_record in maintenance_records:
+        maintenance_record.out_at = out_at
+        db.add(maintenance_record)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -813,6 +896,164 @@ def list_contractor_visits(
     count = db.scalar(select(func.count(ContractorVisit.id)).where(*conditions)) or 0
     rows = list(db.scalars(select(ContractorVisit).where(*conditions).order_by(ContractorVisit.in_at.desc()).offset(skip).limit(limit)))
     return {"data": [visit_read(row) for row in rows], "count": count}
+
+
+@router.get("/contractor-access/maintenance/categories")
+def list_maintenance_categories(
+    db: Session = Depends(get_db), current_user: User = Depends(manager_user)
+) -> dict[str, list[MaintenanceCategoryRead] | int]:
+    condominio_id = user_condominio_id(db, current_user)
+    rows = list(
+        db.scalars(
+            select(MaintenanceCategory)
+            .where(MaintenanceCategory.condominio_id == condominio_id)
+            .order_by(MaintenanceCategory.name.asc())
+        )
+    )
+    return {"data": rows, "count": len(rows)}
+
+
+@router.post(
+    "/contractor-access/maintenance/categories",
+    response_model=MaintenanceCategoryRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_maintenance_category(
+    payload: MaintenanceCategoryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(manager_user),
+) -> MaintenanceCategoryRead:
+    condominio_id = user_condominio_id(db, current_user)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name is required")
+    duplicate = db.scalar(
+        select(MaintenanceCategory).where(
+            MaintenanceCategory.condominio_id == condominio_id,
+            func.lower(MaintenanceCategory.name) == name.casefold(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maintenance category already exists")
+    row = MaintenanceCategory(name=name, condominio_id=condominio_id)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/contractor-access/maintenance")
+def list_maintenance_schedules(
+    db: Session = Depends(get_db), current_user: User = Depends(manager_user)
+) -> dict[str, list[MaintenanceScheduleRead] | int]:
+    condominio_id = user_condominio_id(db, current_user)
+    schedules = list(
+        db.scalars(
+            select(MaintenanceSchedule)
+            .options(joinedload(MaintenanceSchedule.category))
+            .where(MaintenanceSchedule.condominio_id == condominio_id)
+            .order_by(MaintenanceSchedule.created_at.desc())
+        )
+    )
+    latest_by_maintenance_id: dict[str, MaintenanceRecord] = {}
+    records = list(
+        db.scalars(
+            select(MaintenanceRecord)
+            .where(MaintenanceRecord.condominio_id == condominio_id)
+            .order_by(MaintenanceRecord.in_at.desc())
+        )
+    )
+    for record in records:
+        latest_by_maintenance_id.setdefault(record.maintenance_id, record)
+    return {
+        "data": [maintenance_schedule_read(row, latest_by_maintenance_id.get(row.id)) for row in schedules],
+        "count": len(schedules),
+    }
+
+
+@router.post(
+    "/contractor-access/maintenance",
+    response_model=MaintenanceScheduleRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_maintenance_schedule(
+    payload: MaintenanceScheduleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(manager_user),
+) -> MaintenanceScheduleRead:
+    condominio_id = user_condominio_id(db, current_user)
+    category = db.get(MaintenanceCategory, payload.category_id)
+    if category is None or category.condominio_id != condominio_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance category not found")
+    values = {field: getattr(payload, field).strip() for field in ("tag", "report", "notes")}
+    if any(not value for value in values.values()):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Maintenance fields are required")
+    cellphone = normalize_mobile_digits(payload.cellphone) if payload.cellphone and payload.cellphone.strip() else None
+    row = MaintenanceSchedule(
+        category_id=category.id,
+        condominio_id=condominio_id,
+        frequency_days=payload.frequency_days,
+        cellphone=cellphone,
+        **values,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row, attribute_names=["category"])
+    return maintenance_schedule_read(row)
+
+
+@router.get("/contractor-access/maintenance/history")
+def list_maintenance_history(
+    db: Session = Depends(get_db), current_user: User = Depends(manager_user)
+) -> dict[str, list[MaintenanceRecordRead] | int]:
+    condominio_id = user_condominio_id(db, current_user)
+    rows = list(
+        db.scalars(
+            select(MaintenanceRecord)
+            .options(
+                joinedload(MaintenanceRecord.maintenance).joinedload(MaintenanceSchedule.category),
+                joinedload(MaintenanceRecord.contractor_visit),
+            )
+            .where(MaintenanceRecord.condominio_id == condominio_id)
+            .order_by(MaintenanceRecord.in_at.desc())
+            .limit(200)
+        )
+    )
+    return {"data": [maintenance_record_read(row) for row in rows], "count": len(rows)}
+
+
+@router.patch("/contractor-access/{visit_id}", response_model=ContractorVisitRead)
+def update_contractor_visit(
+    visit_id: str,
+    payload: ContractorVisitUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(manager_user),
+) -> ContractorVisitRead:
+    condominio_id = user_condominio_id(db, current_user)
+    row = db.get(ContractorVisit, visit_id)
+    if row is None or row.condominio_id != condominio_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contractor visit not found")
+
+    if payload.building_id is not None:
+        row.block = resolve_public_flat(db, payload.building_id, condominio_id).nome
+    for field in ("name", "company", "job_description", "mobile"):
+        value = getattr(payload, field)
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{field} is required")
+            setattr(row, field, value)
+    if payload.in_at is not None:
+        row.in_at = payload.in_at.astimezone(UTC)
+    if "out_at" in payload.model_fields_set:
+        row.out_at = payload.out_at.astimezone(UTC) if payload.out_at else None
+    if row.out_at is not None and row.out_at <= row.in_at:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="out_at must be after in_at")
+
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return visit_read(row)
 
 
 def validate_data_url(field_name: str, value: str | None) -> str | None:

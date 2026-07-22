@@ -149,6 +149,67 @@ class ContractorCheckOut(BaseModel):
     out_at: datetime | None = None
 
 
+class ContractorVisitUpdate(BaseModel):
+    name: str | None = None
+    company: str | None = None
+    building_id: str | None = None
+    job_description: str | None = None
+    mobile: str | None = None
+    in_at: datetime | None = None
+    out_at: datetime | None = None
+
+
+class MaintenanceCategoryCreate(BaseModel):
+    name: str
+
+
+class MaintenanceCategoryRead(BaseModel):
+    id: str
+    name: str
+    created_at: datetime
+    condominio_id: str
+
+
+class MaintenanceScheduleCreate(BaseModel):
+    category_id: str
+    tag: str
+    report: str
+    frequency_days: int = Field(ge=1)
+    notes: str
+    cellphone: str | None = None
+
+
+class MaintenanceScheduleRead(BaseModel):
+    id: str
+    category_id: str
+    category_name: str
+    tag: str
+    report: str
+    frequency_days: int
+    notes: str
+    cellphone: str | None
+    latest_in_at: datetime | None
+    latest_out_at: datetime | None
+    is_overdue: bool
+    created_at: datetime
+    updated_at: datetime
+    condominio_id: str
+
+
+class MaintenanceRecordRead(BaseModel):
+    id: str
+    maintenance_id: str
+    category_name: str
+    tag: str
+    report: str
+    contractor_visit_id: str
+    contractor_name: str
+    contractor_mobile: str
+    in_at: datetime
+    out_at: datetime | None
+    condominio_id: str
+
+
 class ContractorVisitRead(BaseModel):
     id: str
     name: str

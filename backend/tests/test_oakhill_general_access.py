@@ -1,4 +1,9 @@
+from datetime import UTC, datetime, timedelta
+
+from conftest import TestingSessionLocal
 from fastapi.testclient import TestClient
+
+from app.models.oakhill import MaintenanceRecord
 
 from test_cashflow import get_admin_token
 
@@ -106,3 +111,103 @@ def test_contractor_access_includes_flat_in_records(client: TestClient) -> None:
     assert list_response.status_code == 200
     assert list_response.json()["count"] == 1
     assert list_response.json()["data"][0]["flat"] == "52"
+
+
+def test_admin_can_edit_a_contractor_record(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/contractor-access/check-in",
+        json={
+            "name": "Carlos Contractor",
+            "company": "Fix Co",
+            "building_id": "50",
+            "job_description": "Air conditioner maintenance",
+            "mobile": "62 91111 1111",
+        },
+    )
+    assert created.status_code == 201
+
+    token = get_admin_token(client, email="contractor-edit-admin@example.com")
+    response = client.patch(
+        f"/api/v1/contractor-access/{created.json()['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "name": "Carla Contractor",
+            "company": "Repairs Co",
+            "building_id": "51",
+            "job_description": "Plumbing repair",
+            "mobile": "62 92222 2222",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Carla Contractor"
+    assert response.json()["company"] == "Repairs Co"
+    assert response.json()["flat"] == "51"
+    assert response.json()["job_description"] == "Plumbing repair"
+    assert response.json()["mobile"] == "62 92222 2222"
+
+
+def test_maintenance_schedule_creates_and_completes_history_from_contractor_access(client: TestClient) -> None:
+    token = get_admin_token(client, email="maintenance-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    category_response = client.post(
+        "/api/v1/contractor-access/maintenance/categories",
+        headers=headers,
+        json={"name": "Plumbing"},
+    )
+    assert category_response.status_code == 201
+
+    schedule_response = client.post(
+        "/api/v1/contractor-access/maintenance",
+        headers=headers,
+        json={
+            "category_id": category_response.json()["id"],
+            "tag": "Boiler 1",
+            "report": "Annual boiler safety check",
+            "frequency_days": 30,
+            "notes": "Bring pressure gauge",
+            "cellphone": "62 91111 1111",
+        },
+    )
+    assert schedule_response.status_code == 201
+    maintenance = schedule_response.json()
+    assert maintenance["is_overdue"] is False
+
+    check_in = client.post(
+        "/api/v1/contractor-access/check-in",
+        json={
+            "name": "Carlos Contractor",
+            "company": "Fix Co",
+            "building_id": "50",
+            "job_description": "Boiler service",
+            "mobile": "62911111111",
+        },
+    )
+    assert check_in.status_code == 201
+
+    history_response = client.get("/api/v1/contractor-access/maintenance/history", headers=headers)
+    assert history_response.status_code == 200
+    assert history_response.json()["count"] == 1
+    history = history_response.json()["data"][0]
+    assert history["maintenance_id"] == maintenance["id"]
+    assert history["in_at"] == check_in.json()["in_at"]
+    assert history["out_at"] is None
+
+    check_out = client.post(
+        "/api/v1/contractor-access/check-out",
+        json={"visit_id": check_in.json()["id"]},
+    )
+    assert check_out.status_code == 200
+
+    refreshed_history = client.get("/api/v1/contractor-access/maintenance/history", headers=headers)
+    assert refreshed_history.json()["data"][0]["out_at"] == check_out.json()["out_at"]
+
+    with TestingSessionLocal() as db:
+        record = db.query(MaintenanceRecord).one()
+        record.in_at = datetime.now(UTC) - timedelta(days=31)
+        db.add(record)
+        db.commit()
+
+    overdue_schedule = client.get("/api/v1/contractor-access/maintenance", headers=headers)
+    assert overdue_schedule.json()["data"][0]["is_overdue"] is True

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CashFlowPage } from "./CashFlowPage";
 import { cashFlowService } from "../services/cashflow";
@@ -28,6 +28,8 @@ vi.mock("../services/cashflow", () => ({
 }));
 
 describe("CashFlowPage record movement", () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(cashFlowService.list).mockResolvedValue({
@@ -67,5 +69,15 @@ describe("CashFlowPage record movement", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Move to Cashflow 52" }));
 
     await waitFor(() => expect(cashFlowService.update).toHaveBeenCalledWith(10, { scope: "cashflow52" }));
+  });
+
+  it("labels the main cashflow destination as Cashflow penthouse", async () => {
+    render(<CashFlowPage scope="cashflow52" showFlat={false} />);
+
+    const recordRow = (await screen.findByText("Added to the wrong cashflow")).closest("tr");
+    expect(recordRow).not.toBeNull();
+    fireEvent.click(recordRow!);
+
+    expect(await screen.findByRole("button", { name: "Move to Cashflow penthouse" })).toBeTruthy();
   });
 });

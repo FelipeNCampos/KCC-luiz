@@ -134,7 +134,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const tableMinWidthClass = showFlat ? "min-w-[1000px]" : "min-w-[860px]";
   const summaryLeadingColumnSpan = showFlat ? 6 : 5;
   const moveTargetScope: CashFlowScope = scope === "main" ? "cashflow52" : "main";
-  const moveTargetTitle = scope === "main" ? "Cashflow 52" : "Main Cashflow";
+  const moveTargetTitle = scope === "main" ? "Cashflow 52" : "Cashflow penthouse";
 
   useEffect(() => {
     let active = true;

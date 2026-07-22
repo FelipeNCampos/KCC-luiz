@@ -93,6 +93,55 @@ class ContractorVisit(Base):
 
     condominio: Mapped["Condominio"] = relationship("Condominio", back_populates="contractor_visits")
     histories: Mapped[list["ContractorHistory"]] = relationship("ContractorHistory", back_populates="visit")
+    maintenance_records: Mapped[list["MaintenanceRecord"]] = relationship(
+        "MaintenanceRecord", back_populates="contractor_visit"
+    )
+
+
+class MaintenanceCategory(Base):
+    __tablename__ = "maintenance_categories"
+    __table_args__ = (UniqueConstraint("condominio_id", "name", name="uq_maintenance_category_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
+
+    schedules: Mapped[list["MaintenanceSchedule"]] = relationship("MaintenanceSchedule", back_populates="category")
+
+
+class MaintenanceSchedule(Base):
+    __tablename__ = "maintenance_schedules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
+    tag: Mapped[str] = mapped_column(String(160), nullable=False)
+    report: Mapped[str] = mapped_column(String(500), nullable=False)
+    frequency_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False)
+    cellphone: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
+    category_id: Mapped[str] = mapped_column(String(36), ForeignKey("maintenance_categories.id"), nullable=False, index=True)
+
+    category: Mapped["MaintenanceCategory"] = relationship("MaintenanceCategory", back_populates="schedules")
+    records: Mapped[list["MaintenanceRecord"]] = relationship("MaintenanceRecord", back_populates="maintenance", cascade="all, delete-orphan")
+
+
+class MaintenanceRecord(Base):
+    __tablename__ = "maintenance_records"
+    __table_args__ = (UniqueConstraint("maintenance_id", "contractor_visit_id", name="uq_maintenance_record_visit"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
+    in_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)
+    maintenance_id: Mapped[str] = mapped_column(String(36), ForeignKey("maintenance_schedules.id"), nullable=False, index=True)
+    contractor_visit_id: Mapped[str] = mapped_column(String(36), ForeignKey("contractor_visits.id"), nullable=False, index=True)
+
+    maintenance: Mapped["MaintenanceSchedule"] = relationship("MaintenanceSchedule", back_populates="records")
+    contractor_visit: Mapped["ContractorVisit"] = relationship("ContractorVisit", back_populates="maintenance_records")
 
 
 class ContractorHistoryCategory(Base):

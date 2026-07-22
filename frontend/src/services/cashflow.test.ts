@@ -5,7 +5,10 @@ import { cashFlowService } from "./cashflow";
 
 vi.mock("./api", () => ({
   api: {
-    get: vi.fn()
+    get: vi.fn(),
+    defaults: {
+      baseURL: "/api/v1"
+    }
   }
 }));
 
@@ -32,5 +35,11 @@ describe("cashFlowService public sharing", () => {
     expect(api.get).toHaveBeenCalledWith("/cashflow/share-links", {
       params: { scope: "cashflow52" }
     });
+  });
+
+  it("does not duplicate the API prefix in a public receipt URL", () => {
+    expect(cashFlowService.publicUrl("/api/v1/cashflow/shared/public-token/records/2/invoice")).toBe(
+      "/api/v1/cashflow/shared/public-token/records/2/invoice"
+    );
   });
 });

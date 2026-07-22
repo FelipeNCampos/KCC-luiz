@@ -216,6 +216,13 @@ export const cashFlowService = {
 
   publicUrl(path: string) {
     const baseUrl = api.defaults.baseURL ?? "/api/v1";
-    return `${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+    const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+    const normalizedPath = `/${path.replace(/^\//, "")}`;
+
+    if (normalizedPath === normalizedBaseUrl || normalizedPath.startsWith(`${normalizedBaseUrl}/`)) {
+      return normalizedPath;
+    }
+
+    return `${normalizedBaseUrl}${normalizedPath}`;
   }
 };

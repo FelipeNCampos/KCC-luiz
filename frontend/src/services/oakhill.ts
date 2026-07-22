@@ -51,6 +51,36 @@ export type ContractorVisit = {
   condominio_id: string;
 };
 export type ContractorPublicVisit = ContractorVisit & { door_code?: string | null };
+export type MaintenanceCategory = { id: string; name: string; created_at: string; condominio_id: string };
+export type MaintenanceSchedule = {
+  id: string;
+  category_id: string;
+  category_name: string;
+  tag: string;
+  report: string;
+  frequency_days: number;
+  notes: string;
+  cellphone: string | null;
+  latest_in_at: string | null;
+  latest_out_at: string | null;
+  is_overdue: boolean;
+  created_at: string;
+  updated_at: string;
+  condominio_id: string;
+};
+export type MaintenanceRecord = {
+  id: string;
+  maintenance_id: string;
+  category_name: string;
+  tag: string;
+  report: string;
+  contractor_visit_id: string;
+  contractor_name: string;
+  contractor_mobile: string;
+  in_at: string;
+  out_at: string | null;
+  condominio_id: string;
+};
 export type ContractorHistoryCategory = { id: string; name: string; created_at: string; updated_at: string; condominio_id: string };
 export type ContractorHistory = {
   id: string;
@@ -174,6 +204,30 @@ export const oakhillService = {
   },
   async contractorVisits(params: { search?: string; date_from?: string; date_to?: string } = {}) {
     const { data } = await api.get<ApiList<ContractorVisit>>("/contractor-access/", { params: { skip: 0, limit: 200, ...params } });
+    return data;
+  },
+  async updateContractorVisit(id: string, payload: Partial<Pick<ContractorVisit, "name" | "company" | "job_description" | "mobile" | "in_at" | "out_at">> & { building_id?: string }) {
+    const { data } = await api.patch<ContractorVisit>(`/contractor-access/${id}`, payload);
+    return data;
+  },
+  async maintenanceCategories() {
+    const { data } = await api.get<ApiList<MaintenanceCategory>>("/contractor-access/maintenance/categories");
+    return data;
+  },
+  async createMaintenanceCategory(name: string) {
+    const { data } = await api.post<MaintenanceCategory>("/contractor-access/maintenance/categories", { name });
+    return data;
+  },
+  async maintenanceSchedules() {
+    const { data } = await api.get<ApiList<MaintenanceSchedule>>("/contractor-access/maintenance");
+    return data;
+  },
+  async createMaintenanceSchedule(payload: { category_id: string; tag: string; report: string; frequency_days: number; notes: string; cellphone?: string }) {
+    const { data } = await api.post<MaintenanceSchedule>("/contractor-access/maintenance", payload);
+    return data;
+  },
+  async maintenanceHistory() {
+    const { data } = await api.get<ApiList<MaintenanceRecord>>("/contractor-access/maintenance/history");
     return data;
   },
   async flatChecklist(flat: string) {

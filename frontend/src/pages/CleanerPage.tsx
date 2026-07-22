@@ -70,6 +70,16 @@ function withSelectedTime(source: string, time: string) {
   return date.toISOString();
 }
 
+function dateInputValue(source?: string | null) {
+  if (!source) return "";
+  const date = new Date(source);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function dateTimeValue(date: string, time: string) {
+  return new Date(`${date}T${time}:00`).toISOString();
+}
+
 function StatCard({ title, subtitle, value }: { title: string; subtitle: string; value: number }) {
   return (
     <article className="oak-card p-5">
@@ -127,6 +137,8 @@ export function CleanerPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [outPair, setOutPair] = useState<Pair | null>(null);
   const [detailPair, setDetailPair] = useState<Pair | null>(null);
+  const [editForm, setEditForm] = useState({ building_id: "", in_date: "", in_time: "", out_date: "", out_time: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [outTime, setOutTime] = useState("");
   const [savingOut, setSavingOut] = useState(false);
 
@@ -166,7 +178,6 @@ export function CleanerPage() {
 
   const buildingById = useMemo(() => new Map(buildings.map((item) => [item.id, item.nome])), [buildings]);
   const funcionarioById = useMemo(() => new Map(funcionarios.map((item) => [item.id, item])), [funcionarios]);
-
   const pairs = useMemo(() => {
     const rows = [...access]
       .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
@@ -246,6 +257,38 @@ export function CleanerPage() {
     setOutTime(timeInputValue());
   }
 
+  function openEditModal(pair: Pair) {
+    setFeedback(null);
+    setDetailPair(pair);
+    setEditForm({
+      building_id: pair.building_id,
+      in_date: dateInputValue(pair.in?.data),
+      in_time: pair.in ? timeInputValue(new Date(pair.in.data)) : "",
+      out_date: dateInputValue(pair.out?.data),
+      out_time: pair.out ? timeInputValue(new Date(pair.out.data)) : "",
+    });
+  }
+
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!detailPair || savingEdit) return;
+    setSavingEdit(true);
+    setFeedback(null);
+    try {
+      const updates = [];
+      if (detailPair.in) updates.push(oakhillService.updateAccess(detailPair.in.id, { building_id: editForm.building_id, data: dateTimeValue(editForm.in_date, editForm.in_time) }));
+      if (detailPair.out) updates.push(oakhillService.updateAccess(detailPair.out.id, { building_id: editForm.building_id, data: dateTimeValue(editForm.out_date, editForm.out_time) }));
+      await Promise.all(updates);
+      setDetailPair(null);
+      setFeedback("Record updated successfully.");
+      await reload();
+    } catch {
+      setFeedback("Unable to update record.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function saveOut(event: FormEvent) {
     event.preventDefault();
     if (!outPair?.in || savingOut) return;
@@ -321,7 +364,7 @@ export function CleanerPage() {
               const used = minutesBetween(pair.in?.data, pair.out?.data);
               const checklistCount = pair.out?.checkout_checklist_items.length ?? 0;
               return (
-                <tr className="cursor-pointer border-t border-oak-border hover:bg-oak-panel/70" key={pair.key} onClick={() => setDetailPair(pair)}>
+                <tr className="cursor-pointer border-t border-oak-border hover:bg-oak-panel/70" key={pair.key} onClick={() => openEditModal(pair)}>
                   <td className="p-3">{formatDate(pair.in?.data ?? pair.out?.data ?? "")}</td>
                   <td>{buildingById.get(pair.building_id) ?? pair.building_id}</td>
                   <td>{formatTime(pair.in?.data)}</td>
@@ -341,50 +384,27 @@ export function CleanerPage() {
 
       {detailPair ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
-          <article className="flex max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-oak-border bg-white shadow-oakLg">
+          <article className="w-full max-w-xl rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
-                <p className="oak-label">Cleaner record</p>
-                <h2 className="text-lg font-extrabold text-oak-coffee">{buildingById.get(detailPair.building_id) ?? detailPair.building_id}</h2>
+                <p className="oak-label">Cleaner</p>
+                <h2 className="text-lg font-extrabold text-oak-coffee">Edit cleaner record</h2>
               </div>
               <button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={() => setDetailPair(null)}>
                 <X size={17} />
               </button>
             </header>
-            <div className="grid min-h-0 gap-5 overflow-y-auto p-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-              <div className="grid content-start gap-3 text-sm font-bold text-black/65">
-                {(() => {
-                  const worker = funcionarioById.get(detailPair.in?.funcionario_id ?? detailPair.out?.funcionario_id ?? "");
-                  return (
-                    <>
-                      <div className="rounded-xl bg-oak-panel p-4"><span className="oak-label">Name</span><p className="mt-1 text-oak-coffee">{worker?.nome ?? "-"}</p></div>
-                      <div className="rounded-xl bg-oak-panel p-4"><span className="oak-label">Mobile</span><p className="mt-1 text-oak-coffee">{worker?.mobile ?? "-"}</p></div>
-                    </>
-                  );
-                })()}
-                <div className="rounded-xl bg-oak-panel p-4"><span className="oak-label">Flat</span><p className="mt-1 text-oak-coffee">{buildingById.get(detailPair.building_id) ?? detailPair.building_id}</p></div>
-                <div className="rounded-xl bg-oak-panel p-4"><span className="oak-label">Date</span><p className="mt-1 text-oak-coffee">{formatDate(detailPair.in?.data ?? detailPair.out?.data ?? "")}</p></div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl bg-oak-panel p-4"><span className="oak-label">IN</span><p className="mt-1 text-oak-coffee">{formatTime(detailPair.in?.data)}</p></div>
-                  <div className="rounded-xl bg-oak-panel p-4"><span className="oak-label">OUT</span><p className="mt-1 text-oak-coffee">{formatTime(detailPair.out?.data)}</p></div>
-                  <div className="rounded-xl bg-oak-panel p-4"><span className="oak-label">Used</span><p className="mt-1 text-oak-coffee">{formatMinutes(minutesBetween(detailPair.in?.data, detailPair.out?.data))}</p></div>
-                </div>
-              </div>
-              <div className="min-h-0 rounded-xl border border-oak-border p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="oak-label">Checklist</p>
-                  <span className="text-xs font-extrabold text-black/50">{detailPair.out?.checkout_checklist_items.length ?? 0} items</span>
-                </div>
-                <div className="mt-4 grid max-h-[52dvh] gap-2 overflow-y-auto pr-1">
-                  {detailPair.out?.checkout_checklist_items.length ? detailPair.out.checkout_checklist_items.map((item) => (
-                    <div className="flex items-start gap-3 rounded-lg bg-oak-panel p-3 text-sm font-bold text-black/70" key={item.id}>
-                      <input className="mt-0.5 size-5 shrink-0 accent-oak-taupe" type="checkbox" checked={item.checked} readOnly />
-                      <span>{item.label}</span>
-                    </div>
-                  )) : <p className="rounded-lg bg-oak-panel p-3 text-sm font-bold text-black/60">No checkout checklist saved.</p>}
-                </div>
-              </div>
-            </div>
+            <form className="grid gap-4 p-6 sm:grid-cols-2" onSubmit={(event) => void saveEdit(event)}>
+              {(() => {
+                const worker = funcionarioById.get(detailPair.in?.funcionario_id ?? detailPair.out?.funcionario_id ?? "");
+                return <div className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/65 sm:col-span-2">{worker?.nome ?? "Cleaner"}{worker?.mobile ? ` · ${worker.mobile}` : ""}</div>;
+              })()}
+              <label className="grid gap-2 sm:col-span-2"><span className="oak-label">Flat</span><select className="oak-input" value={editForm.building_id} onChange={(event) => setEditForm((current) => ({ ...current, building_id: event.target.value }))} required>{buildings.map((building) => <option key={building.id} value={building.id}>{building.nome}</option>)}</select></label>
+              {detailPair.in ? <><label className="grid gap-2"><span className="oak-label">IN date</span><input className="oak-input" type="date" value={editForm.in_date} onChange={(event) => setEditForm((current) => ({ ...current, in_date: event.target.value }))} required /></label><label className="grid gap-2"><span className="oak-label">IN time</span><input className="oak-input" type="time" value={editForm.in_time} onChange={(event) => setEditForm((current) => ({ ...current, in_time: event.target.value }))} required /></label></> : null}
+              {detailPair.out ? <><label className="grid gap-2"><span className="oak-label">OUT date</span><input className="oak-input" type="date" value={editForm.out_date} onChange={(event) => setEditForm((current) => ({ ...current, out_date: event.target.value }))} required /></label><label className="grid gap-2"><span className="oak-label">OUT time</span><input className="oak-input" type="time" value={editForm.out_time} onChange={(event) => setEditForm((current) => ({ ...current, out_time: event.target.value }))} required /></label></> : null}
+              <div className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/65 sm:col-span-2">Checklist: {detailPair.out?.checkout_checklist_items.length ?? 0} items{detailPair.out?.checkout_checklist_items.length ? ` · ${detailPair.out.checkout_checklist_items.map((item) => item.label).join(", ")}` : ""}</div>
+              <div className="flex gap-3 sm:col-span-2 sm:justify-end"><button className="oak-button-secondary" type="button" onClick={() => setDetailPair(null)}>Cancel</button><button className="oak-button-primary" disabled={savingEdit} type="submit">{savingEdit ? "Saving..." : "Save changes"}</button></div>
+            </form>
           </article>
         </div>
       ) : null}

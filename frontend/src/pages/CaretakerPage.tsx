@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { FileText, Search, Settings2, X } from "lucide-react";
+import { FileText, Plus, Search, Settings2, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
 import { InvoiceModalContractor } from "../components/InvoiceModalContractor";
-import { ContractorVisit, oakhillService } from "../services/oakhill";
+import { ContractorVisit, MaintenanceCategory, MaintenanceRecord, MaintenanceSchedule, oakhillService } from "../services/oakhill";
 
 const GOAL_KEY_PREFIX = "oakhill-contractor-monthly-goal-hours-";
 const WEEKLY_GOAL_KEY_PREFIX = "oakhill-contractor-weekly-goal-hours-";
@@ -78,6 +78,15 @@ function withSelectedTime(source: string, time: string) {
   return date.toISOString();
 }
 
+function dateInputValue(source: string) {
+  const date = new Date(source);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function dateTimeValue(date: string, time: string) {
+  return new Date(`${date}T${time}:00`).toISOString();
+}
+
 function ProgressCard({
   title,
   subtitle,
@@ -119,9 +128,22 @@ export function CaretakerPage() {
   const [weeklyGoal, setWeeklyGoal] = useState(() => Number(localStorage.getItem(weeklyGoalKey(initialMonth)) ?? 0));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+  const [isMaintenanceOpen, setIsMaintenanceOpen] = useState(false);
+  const [maintenanceTab, setMaintenanceTab] = useState<"schedule" | "history">("schedule");
+  const [categories, setCategories] = useState<MaintenanceCategory[]>([]);
+  const [maintenanceSchedules, setMaintenanceSchedules] = useState<MaintenanceSchedule[]>([]);
+  const [maintenanceHistory, setMaintenanceHistory] = useState<MaintenanceRecord[]>([]);
+  const [isMaintenanceAddOpen, setIsMaintenanceAddOpen] = useState(false);
+  const [maintenanceAddMode, setMaintenanceAddMode] = useState<"choose" | "category" | "maintenance">("choose");
+  const [categoryName, setCategoryName] = useState("");
+  const [maintenanceForm, setMaintenanceForm] = useState({ category_id: "", tag: "", report: "", frequency_days: "", notes: "", cellphone: "" });
+  const [savingMaintenance, setSavingMaintenance] = useState(false);
   const [checkingOutId, setCheckingOutId] = useState<string | null>(null);
   const [outTarget, setOutTarget] = useState<ContractorVisit | null>(null);
   const [outTime, setOutTime] = useState("");
+  const [editTarget, setEditTarget] = useState<ContractorVisit | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", company: "", building_id: "", job_description: "", mobile: "", in_date: "", in_time: "", out_date: "", out_time: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const { start, end } = monthBounds(month);
 
@@ -137,7 +159,10 @@ export function CaretakerPage() {
       if (event.key === "Escape") {
         setIsSettingsOpen(false);
         setIsInvoiceOpen(false);
+        setIsMaintenanceOpen(false);
+        setIsMaintenanceAddOpen(false);
         setOutTarget(null);
+        setEditTarget(null);
       }
     };
 
@@ -181,6 +206,111 @@ export function CaretakerPage() {
     setOutTime(timeInputValue());
   }
 
+  async function loadMaintenance() {
+    const [categoryResponse, scheduleResponse, historyResponse] = await Promise.all([
+      oakhillService.maintenanceCategories(),
+      oakhillService.maintenanceSchedules(),
+      oakhillService.maintenanceHistory(),
+    ]);
+    setCategories(categoryResponse.data);
+    setMaintenanceSchedules(scheduleResponse.data);
+    setMaintenanceHistory(historyResponse.data);
+  }
+
+  function openMaintenance() {
+    setIsMaintenanceOpen(true);
+    setMaintenanceTab("schedule");
+    setFeedback(null);
+    void loadMaintenance().catch(() => setFeedback("Unable to load maintenance records."));
+  }
+
+  function openMaintenanceAdd() {
+    setMaintenanceAddMode("choose");
+    setCategoryName("");
+    setMaintenanceForm({ category_id: categories[0]?.id ?? "", tag: "", report: "", frequency_days: "", notes: "", cellphone: "" });
+    setIsMaintenanceAddOpen(true);
+  }
+
+  async function saveMaintenanceCategory(event: FormEvent) {
+    event.preventDefault();
+    if (savingMaintenance) return;
+    setSavingMaintenance(true);
+    try {
+      const category = await oakhillService.createMaintenanceCategory(categoryName);
+      setIsMaintenanceAddOpen(false);
+      setMaintenanceForm((current) => ({ ...current, category_id: category.id }));
+      await loadMaintenance();
+    } catch {
+      setFeedback("Unable to save maintenance category.");
+    } finally {
+      setSavingMaintenance(false);
+    }
+  }
+
+  async function saveMaintenanceSchedule(event: FormEvent) {
+    event.preventDefault();
+    if (savingMaintenance) return;
+    setSavingMaintenance(true);
+    try {
+      await oakhillService.createMaintenanceSchedule({
+        category_id: maintenanceForm.category_id,
+        tag: maintenanceForm.tag,
+        report: maintenanceForm.report,
+        frequency_days: Number(maintenanceForm.frequency_days),
+        notes: maintenanceForm.notes,
+        cellphone: maintenanceForm.cellphone.trim() || undefined,
+      });
+      setIsMaintenanceAddOpen(false);
+      await loadMaintenance();
+    } catch {
+      setFeedback("Unable to save maintenance schedule.");
+    } finally {
+      setSavingMaintenance(false);
+    }
+  }
+
+  function openEditModal(record: ContractorVisit) {
+    setFeedback(null);
+    setEditTarget(record);
+    setEditForm({
+      name: record.name,
+      company: record.company,
+      building_id: record.flat,
+      job_description: record.job_description,
+      mobile: record.mobile,
+      in_date: dateInputValue(record.in_at),
+      in_time: timeInputValue(new Date(record.in_at)),
+      out_date: record.out_at ? dateInputValue(record.out_at) : "",
+      out_time: record.out_at ? timeInputValue(new Date(record.out_at)) : "",
+    });
+  }
+
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editTarget || savingEdit) return;
+    setSavingEdit(true);
+    setFeedback(null);
+    try {
+      await oakhillService.updateContractorVisit(editTarget.id, {
+        name: editForm.name,
+        company: editForm.company,
+        building_id: editForm.building_id,
+        job_description: editForm.job_description,
+        mobile: editForm.mobile,
+        in_at: dateTimeValue(editForm.in_date, editForm.in_time),
+        out_at: editForm.out_date && editForm.out_time ? dateTimeValue(editForm.out_date, editForm.out_time) : null,
+      });
+      setEditTarget(null);
+      setFeedback("Record updated successfully.");
+      const response = await oakhillService.contractorVisits({ date_from: start, date_to: end, search: search.trim() || undefined });
+      setRecords(response.data);
+    } catch {
+      setFeedback("Unable to update record.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function handleTimeOut(event: FormEvent) {
     event.preventDefault();
     if (!outTarget) return;
@@ -216,9 +346,11 @@ export function CaretakerPage() {
           <Settings2 size={16} />
           Settings
         </button>
+        <button className="oak-button-secondary" type="button" onClick={openMaintenance}>Maintenance</button>
       </div>
 
-      <div className="hidden justify-end md:flex">
+      <div className="hidden justify-end gap-3 md:flex">
+        <button className="oak-button-secondary" type="button" onClick={openMaintenance}>Maintenance</button>
         <button className="oak-button-secondary" type="button" onClick={() => setIsSettingsOpen(true)}>
           <Settings2 size={16} />
           Settings
@@ -274,7 +406,7 @@ export function CaretakerPage() {
           </thead>
           <tbody>
             {records.map((record) => (
-              <tr className="border-t border-oak-border" key={record.id}>
+              <tr className="cursor-pointer border-t border-oak-border hover:bg-oak-panel/70" key={record.id} onClick={() => openEditModal(record)}>
                 <td className="p-3 whitespace-nowrap">{formatDate(record.in_at)}</td>
                 <td className="p-3 whitespace-nowrap">{record.name}</td>
                 <td className="p-3 whitespace-nowrap">{record.company}</td>
@@ -289,7 +421,7 @@ export function CaretakerPage() {
                       className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
                       type="button"
                       disabled={checkingOutId === record.id}
-                      onClick={() => openOutModal(record)}
+                      onClick={(event) => { event.stopPropagation(); openOutModal(record); }}
                     >
                       {checkingOutId === record.id ? "Saving..." : "OUT"}
                     </button>
@@ -327,6 +459,52 @@ export function CaretakerPage() {
                 <button className="oak-button-primary" disabled={checkingOutId === outTarget.id} type="submit">{checkingOutId === outTarget.id ? "Saving..." : "Save OUT"}</button>
               </div>
             </form>
+          </article>
+        </div>
+      ) : null}
+
+      {editTarget ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
+          <article className="w-full max-w-2xl rounded-2xl border border-oak-border bg-white shadow-oakLg">
+            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
+              <div><p className="oak-label">Contractor</p><h2 className="text-lg font-extrabold text-oak-coffee">Edit contractor record</h2></div>
+              <button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={() => setEditTarget(null)}><X size={17} /></button>
+            </header>
+            <form className="grid gap-4 p-6 sm:grid-cols-2" onSubmit={(event) => void saveEdit(event)}>
+              {(["name", "company", "mobile", "job_description"] as const).map((field) => <label className="grid gap-2" key={field}><span className="oak-label">{field === "job_description" ? "Job" : field[0].toUpperCase() + field.slice(1)}</span><input className="oak-input" value={editForm[field]} onChange={(event) => setEditForm((current) => ({ ...current, [field]: event.target.value }))} required /></label>)}
+              <label className="grid gap-2"><span className="oak-label">Flat</span><select className="oak-input" value={editForm.building_id} onChange={(event) => setEditForm((current) => ({ ...current, building_id: event.target.value }))} required>{["50", "51", "52"].map((flat) => <option key={flat} value={flat}>Flat {flat}</option>)}</select></label>
+              <label className="grid gap-2"><span className="oak-label">IN date</span><input className="oak-input" type="date" value={editForm.in_date} onChange={(event) => setEditForm((current) => ({ ...current, in_date: event.target.value }))} required /></label>
+              <label className="grid gap-2"><span className="oak-label">IN time</span><input className="oak-input" type="time" value={editForm.in_time} onChange={(event) => setEditForm((current) => ({ ...current, in_time: event.target.value }))} required /></label>
+              <label className="grid gap-2"><span className="oak-label">OUT date</span><input className="oak-input" type="date" value={editForm.out_date} onChange={(event) => setEditForm((current) => ({ ...current, out_date: event.target.value }))} /></label>
+              <label className="grid gap-2"><span className="oak-label">OUT time</span><input className="oak-input" type="time" value={editForm.out_time} onChange={(event) => setEditForm((current) => ({ ...current, out_time: event.target.value }))} /></label>
+              <div className="flex gap-3 sm:col-span-2 sm:justify-end"><button className="oak-button-secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</button><button className="oak-button-primary" disabled={savingEdit} type="submit">{savingEdit ? "Saving..." : "Save changes"}</button></div>
+            </form>
+          </article>
+        </div>
+      ) : null}
+
+      {isMaintenanceOpen ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
+          <article className="flex max-h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-oak-border bg-white shadow-oakLg">
+            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
+              <div><p className="oak-label">Contractor</p><h2 className="text-xl font-extrabold text-oak-coffee">Maintenance</h2></div>
+              <div className="flex items-center gap-3"><button className="oak-button-primary !min-h-9 !px-3" type="button" onClick={openMaintenanceAdd}><Plus size={16} />Add</button><button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={() => setIsMaintenanceOpen(false)}><X size={17} /></button></div>
+            </header>
+            <div className="flex gap-2 border-b border-oak-border px-6 pt-4"><button className={`rounded-t-lg px-4 py-3 font-extrabold ${maintenanceTab === "schedule" ? "bg-oak-panel text-oak-coffee" : "text-oak-muted"}`} type="button" onClick={() => setMaintenanceTab("schedule")}>Schedule</button><button className={`rounded-t-lg px-4 py-3 font-extrabold ${maintenanceTab === "history" ? "bg-oak-panel text-oak-coffee" : "text-oak-muted"}`} type="button" onClick={() => setMaintenanceTab("history")}>History</button></div>
+            <div className="min-h-0 overflow-auto p-6">
+              {maintenanceTab === "schedule" ? <table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-oak-panel text-oak-muted"><tr><th className="p-3">Category</th><th className="p-3">Tag</th><th className="p-3">Report</th><th className="p-3">Frequency</th><th className="p-3">Notes</th><th className="p-3">Cellphone</th></tr></thead><tbody>{maintenanceSchedules.length === 0 ? <tr><td className="p-5 text-black/60" colSpan={6}>No maintenance scheduled.</td></tr> : maintenanceSchedules.map((item) => <tr className={item.is_overdue ? "border-t border-red-200 bg-red-50" : "border-t border-emerald-200 bg-emerald-50"} key={item.id}><td className="p-3 font-bold">{item.category_name}</td><td className="p-3">{item.tag}</td><td className="p-3">{item.report}</td><td className="p-3">{item.frequency_days} days</td><td className="p-3">{item.notes}</td><td className="p-3">{item.cellphone ?? "-"}</td></tr>)}</tbody></table> : <table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-oak-panel text-oak-muted"><tr><th className="p-3">Category</th><th className="p-3">Tag</th><th className="p-3">Contractor</th><th className="p-3">IN</th><th className="p-3">OUT</th></tr></thead><tbody>{maintenanceHistory.length === 0 ? <tr><td className="p-5 text-black/60" colSpan={5}>No maintenance history yet.</td></tr> : maintenanceHistory.map((item) => <tr className="border-t border-oak-border" key={item.id}><td className="p-3">{item.category_name}</td><td className="p-3">{item.tag}</td><td className="p-3">{item.contractor_name}</td><td className="p-3">{formatDate(item.in_at)} {formatTime(item.in_at)}</td><td className="p-3">{item.out_at ? `${formatDate(item.out_at)} ${formatTime(item.out_at)}` : "Open"}</td></tr>)}</tbody></table>}
+            </div>
+          </article>
+        </div>
+      ) : null}
+
+      {isMaintenanceAddOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+          <article className="w-full max-w-lg rounded-2xl border border-oak-border bg-white shadow-oakLg">
+            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4"><h2 className="text-lg font-extrabold text-oak-coffee">Add maintenance</h2><button className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={() => setIsMaintenanceAddOpen(false)}><X size={17} /></button></header>
+            {maintenanceAddMode === "choose" ? <div className="grid gap-3 p-6 sm:grid-cols-2"><button className="oak-button-secondary min-h-24" type="button" onClick={() => setMaintenanceAddMode("category")}>Category</button><button className="oak-button-primary min-h-24" type="button" onClick={() => setMaintenanceAddMode("maintenance")}>Maintenance</button></div> : null}
+            {maintenanceAddMode === "category" ? <form className="grid gap-4 p-6" onSubmit={(event) => void saveMaintenanceCategory(event)}><label className="grid gap-2"><span className="oak-label">Category name</span><input className="oak-input" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required autoFocus /></label><div className="flex justify-end gap-3"><button className="oak-button-secondary" type="button" onClick={() => setMaintenanceAddMode("choose")}>Back</button><button className="oak-button-primary" disabled={savingMaintenance} type="submit">{savingMaintenance ? "Saving..." : "Save category"}</button></div></form> : null}
+            {maintenanceAddMode === "maintenance" ? <form className="grid gap-4 p-6 sm:grid-cols-2" onSubmit={(event) => void saveMaintenanceSchedule(event)}><label className="grid gap-2 sm:col-span-2"><span className="oak-label">Category name</span><select className="oak-input" value={maintenanceForm.category_id} onChange={(event) => setMaintenanceForm((current) => ({ ...current, category_id: event.target.value }))} required><option value="">Select category</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>{(["tag", "report", "notes", "cellphone"] as const).map((field) => <label className="grid gap-2" key={field}><span className="oak-label">{field === "cellphone" ? "Cellphone (optional)" : field[0].toUpperCase() + field.slice(1)}</span><input className="oak-input" value={maintenanceForm[field]} onChange={(event) => setMaintenanceForm((current) => ({ ...current, [field]: event.target.value }))} required={field !== "cellphone"} /></label>)}<label className="grid gap-2"><span className="oak-label">Frequency (days)</span><input className="oak-input" type="number" min="1" value={maintenanceForm.frequency_days} onChange={(event) => setMaintenanceForm((current) => ({ ...current, frequency_days: event.target.value }))} required /></label><div className="flex justify-end gap-3 sm:col-span-2"><button className="oak-button-secondary" type="button" onClick={() => setMaintenanceAddMode("choose")}>Back</button><button className="oak-button-primary" disabled={savingMaintenance} type="submit">{savingMaintenance ? "Saving..." : "Save maintenance"}</button></div></form> : null}
           </article>
         </div>
       ) : null}
