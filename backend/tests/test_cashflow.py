@@ -8,10 +8,12 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader
 from reportlab.lib.pagesizes import A5
 from reportlab.pdfgen import canvas
+from reportlab.platypus import Paragraph
 
 from app.core.config import settings
 from app.models.user import User
 from app.services import cashflow_share_link_service
+from app.services.cashflow_service import CashFlowService
 
 
 def make_invoice_pdf(text: str = "Invoice") -> bytes:
@@ -64,6 +66,19 @@ def get_admin_token(client: TestClient, email: str = "admin@example.com") -> str
     auth_response = register_user(client, email)
     set_user_role(auth_response["user"]["id"], "admin")
     return login_user(client, email)
+
+
+def test_cashflow_report_table_wraps_long_cell_text() -> None:
+    table = CashFlowService._styled_table(
+        [["Comments"], ["Long maintenance description that must wrap inside its cell."]],
+        [30],
+    )
+
+    assert isinstance(table._cellvalues[1][0], Paragraph)
+
+    table.wrap(30, 400)
+
+    assert table._rowHeights[1] > 18
 
 
 def test_cashflow_share_link_exposes_current_inclusive_period_and_invoice(

@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from fastapi import HTTPException, status
 from pypdf import PdfReader, PdfWriter, Transformation
@@ -9,7 +10,7 @@ from pypdf.errors import PdfReadError
 from pypdf.generic import RectangleObject
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
@@ -499,7 +500,44 @@ class CashFlowService:
         widths: list[float],
         has_header: bool = True,
     ) -> Table:
-        table = Table(rows, colWidths=widths, repeatRows=1 if has_header else 0)
+        cell_style = ParagraphStyle(
+            "CashflowReportCell",
+            fontName="Helvetica",
+            fontSize=8,
+            leading=10,
+            wordWrap="CJK",
+        )
+        header_style = ParagraphStyle(
+            "CashflowReportHeader",
+            parent=cell_style,
+            fontName="Helvetica-Bold",
+            textColor=colors.white,
+        )
+        label_style = ParagraphStyle(
+            "CashflowReportLabel",
+            parent=cell_style,
+            fontName="Helvetica-Bold",
+        )
+
+        def cell(value: object, style: ParagraphStyle) -> Paragraph:
+            text = escape(str(value)).replace("\n", "<br/>")
+            return Paragraph(text, style)
+
+        wrapped_rows = [
+            [
+                cell(
+                    value,
+                    header_style
+                    if has_header and row_index == 0
+                    else label_style
+                    if not has_header and column_index == 0
+                    else cell_style,
+                )
+                for column_index, value in enumerate(row)
+            ]
+            for row_index, row in enumerate(rows)
+        ]
+        table = Table(wrapped_rows, colWidths=widths, repeatRows=1 if has_header else 0)
         style = [
             ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E5E0DC")),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, Plus, Trash2, Upload, X } from "lucide-react";
 
-import { cashFlowService } from "../services/cashflow";
+import { type CashFlowScope, cashFlowService } from "../services/cashflow";
 import { renderPdfFirstPageToDataUrl } from "../utils/pdfPreview";
 
 type InvoiceModalProps = {
@@ -713,7 +713,7 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
       });
   }
 
-  async function handleDownload() {
+  async function buildInvoicePdf() {
     const { jsPDF } = await import("jspdf");
 
     const pdf = new jsPDF({ unit: "pt", format: "a4" });
@@ -976,10 +976,19 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
     const fileName = `${safeFileName(
       `invoice-${documentData.invoiceNumber}-${flat.length ? flat.join("-") : sourceLabel}`
     ) || "invoice"}.pdf`;
+    return {
+      file: new File([pdf.output("blob")], fileName, { type: "application/pdf" }),
+      fileName,
+      pdf,
+    };
+  }
+
+  async function handleDownload() {
+    const { fileName, pdf } = await buildInvoicePdf();
     pdf.save(fileName);
   }
 
-  async function handleLaunchToCashflow() {
+  async function handleLaunchToCashflow(scope: CashFlowScope) {
     setError(null);
 
     const normalizedItems = items.map((item) => {
@@ -1017,16 +1026,19 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
     setSaving(true);
     try {
       const cashflowValue = (-Math.abs(totalValue)).toFixed(2);
+      const invoicePdf = await buildInvoicePdf();
       const created = await cashFlowService.create({
+        scope,
         invoice: "Yes",
         date: invoiceDate,
         value: cashflowValue,
         description: normalizedItems.map((item) => item.description).join("; "),
         flat: flat.length ? flat.join(", ") : undefined,
-        invoiceMedia: mediaFile,
+        invoiceMedia: invoicePdf.file,
       });
 
-      onCreated?.(`Invoice ${normalizedInvoiceNumber} sent to cashflow successfully. Cashflow record #${created.payment_number}.`);
+      const cashflowName = scope === "main" ? "Cashflow penthouse" : "Cashflow 52";
+      onCreated?.(`Invoice ${normalizedInvoiceNumber} sent to ${cashflowName} successfully. Cashflow record #${created.payment_number}.`);
       onClose();
     } catch (requestError) {
       const message = (requestError as { response?: { data?: { detail?: string } } }).response?.data?.detail;
@@ -1284,18 +1296,31 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
                   <div className="rounded-xl border border-oak-danger/30 bg-oak-dangerBg p-3 text-sm font-bold text-oak-danger">{error}</div>
                 ) : null}
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button className="oak-button-secondary !min-h-10 !py-2" type="button" onClick={() => void handleDownload()}>
+                <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-3">
+                  <button
+                    aria-label="Download invoice"
+                    className="oak-button-secondary grid !size-10 !min-h-10 !p-0"
+                    title="Download invoice"
+                    type="button"
+                    onClick={() => void handleDownload()}
+                  >
                     <Download size={16} />
-                    Download
                   </button>
                   <button
                     className="oak-button-primary !min-h-10 !py-2"
                     type="button"
                     disabled={saving}
-                    onClick={() => void handleLaunchToCashflow()}
+                    onClick={() => void handleLaunchToCashflow("main")}
                   >
-                    {saving ? "Sending..." : "Launch to cashflow"}
+                    {saving ? "Sending..." : "Penthouse"}
+                  </button>
+                  <button
+                    className="oak-button-primary !min-h-10 !py-2"
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void handleLaunchToCashflow("cashflow52")}
+                  >
+                    {saving ? "Sending..." : "52"}
                   </button>
                 </div>
               </div>
