@@ -78,7 +78,7 @@ def list_cashflow_records(
     _: Annotated[User, Depends(require_roles("admin", "manager"))],
     month: Annotated[str | None, Query(description="Month in format YYYY-MM")] = None,
     search: Annotated[
-        str | None, Query(description="Search by description, supplier or flat")
+        str | None, Query(description="Search by description, supplier, flat or amount")
     ] = None,
     scope: Annotated[str | None, Query(description="Cashflow scope")] = None,
 ) -> CashFlowListResponse:

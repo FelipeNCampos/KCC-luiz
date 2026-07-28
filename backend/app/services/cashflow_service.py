@@ -114,11 +114,13 @@ class CashFlowService:
             description = record.description or ""
             supplier = record.supplier or ""
             flat = record.flat or ""
+            amount = str(record.amount)
             matches_description = query in description.lower()
             matches_supplier = query in supplier.lower()
             matches_flat = include_flat and query in flat.lower()
+            matches_amount = query in amount
 
-            if query and not matches_description and not matches_supplier and not matches_flat:
+            if query and not matches_description and not matches_supplier and not matches_flat and not matches_amount:
                 continue
 
             items.append(

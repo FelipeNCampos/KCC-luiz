@@ -2,6 +2,7 @@ import base64
 import calendar
 import re
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -61,6 +62,7 @@ from app.schemas.oakhill import (
     MaintenanceScheduleCreate,
     MaintenanceScheduleRead,
     UtilityReadingBatchCreate,
+    UtilityReadingPublicBatchCreate,
     UtilityReadingRead,
 )
 from app.services.sms_service import normalize_phone, send_sms_notification
@@ -136,10 +138,10 @@ def resolve_public_flat(db: Session, value: str, condominio_id: str | None = Non
 
 
 def utility_reading_read(row: UtilityReading, building: Building, previous: UtilityReading | None, prior: UtilityReading | None) -> UtilityReadingRead:
-    energy_used = row.energy - previous.energy if previous else None
-    gas_used = row.gas - previous.gas if previous else None
-    previous_energy_used = previous.energy - prior.energy if previous and prior else None
-    previous_gas_used = previous.gas - prior.gas if previous and prior else None
+    energy_used = row.energy - previous.energy if row.energy is not None and previous and previous.energy is not None else None
+    gas_used = row.gas - previous.gas if row.gas is not None and previous and previous.gas is not None else None
+    previous_energy_used = previous.energy - prior.energy if previous and prior and previous.energy is not None and prior.energy is not None else None
+    previous_gas_used = previous.gas - prior.gas if previous and prior and previous.gas is not None and prior.gas is not None else None
     return UtilityReadingRead(
         id=row.id,
         flat=building.nome.removeprefix("Flat ").strip(),
@@ -213,6 +215,44 @@ def create_utility_readings(
         "data": [utility_reading_read(row, buildings[reading.flat], None, None) for row, reading in zip(rows, payload.readings)],
         "count": len(rows),
     }
+
+
+@router.post("/readings/public/{utility}", status_code=status.HTTP_201_CREATED)
+def create_public_utility_readings(
+    utility: Literal["energy", "gas"],
+    payload: UtilityReadingPublicBatchCreate,
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    if {reading.flat for reading in payload.readings} != set(PUBLIC_FLATS):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Readings for Flats 50, 51 and 52 are required")
+
+    condominio = default_condominio(db)
+    buildings = {flat: resolve_public_flat(db, flat, condominio.id) for flat in PUBLIC_FLATS}
+    rows: list[UtilityReading] = []
+    for reading in payload.readings:
+        building = buildings[reading.flat]
+        row = db.scalar(
+            select(UtilityReading).where(
+                UtilityReading.condominio_id == condominio.id,
+                UtilityReading.building_id == building.id,
+                UtilityReading.reading_date == payload.reading_date,
+            )
+        )
+        if row is None:
+            row = UtilityReading(
+                reading_date=payload.reading_date,
+                energy=None,
+                gas=None,
+                building_id=building.id,
+                condominio_id=condominio.id,
+            )
+
+        setattr(row, utility, reading.value)
+        db.add(row)
+        rows.append(row)
+
+    db.commit()
+    return {"count": len(rows)}
 
 
 def active_cleaner(db: Session, condominio_id: str | None = None) -> Funcionario:

@@ -619,7 +619,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-oak-taupe" />
             <input
               className="oak-input pl-9"
-              placeholder={showFlat ? "Search by Description, Supplier or Flat" : "Search by Description or Supplier"}
+              placeholder={showFlat ? "Search by Description, Supplier, Flat or Amount" : "Search by Description, Supplier or Amount"}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />

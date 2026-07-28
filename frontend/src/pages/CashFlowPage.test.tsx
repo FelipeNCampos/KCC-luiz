@@ -80,4 +80,10 @@ describe("CashFlowPage record movement", () => {
 
     expect(await screen.findByRole("button", { name: "Move to Cashflow penthouse" })).toBeTruthy();
   });
+
+  it("indicates that search also accepts an amount", () => {
+    render(<CashFlowPage />);
+
+    expect(screen.getByPlaceholderText("Search by Description, Supplier, Flat or Amount")).toBeTruthy();
+  });
 });

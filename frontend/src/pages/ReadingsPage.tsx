@@ -81,18 +81,23 @@ export function ReadingsPage() {
   );
 }
 
-type ReadingForm = Record<(typeof FLATS)[number], { energy: string; gas: string }>;
+type ReadingUtility = "energy" | "gas";
+type ReadingForm = Record<(typeof FLATS)[number], Record<ReadingUtility, string>>;
+type ReadingsFormPageProps = { utility?: ReadingUtility; publicForm?: boolean };
 
 function emptyReadingForm(): ReadingForm {
   return { "50": { energy: "", gas: "" }, "51": { energy: "", gas: "" }, "52": { energy: "", gas: "" } };
 }
 
-export function ReadingsFormPage() {
+export function ReadingsFormPage({ utility, publicForm = false }: ReadingsFormPageProps = {}) {
   const navigate = useNavigate();
   const [readingDate, setReadingDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [form, setForm] = useState<ReadingForm>(emptyReadingForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const fields: ReadingUtility[] = utility ? [utility] : ["energy", "gas"];
+  const formTitle = utility ? `${utility === "energy" ? "Energy" : "Gas"} readings` : "Add readings";
 
   function updateReading(flat: (typeof FLATS)[number], field: "energy" | "gas", value: string) {
     setForm((current) => ({ ...current, [flat]: { ...current[flat], [field]: value } }));
@@ -104,34 +109,51 @@ export function ReadingsFormPage() {
     setSaving(true);
     setError("");
     try {
-      await oakhillService.saveReadings({
-        reading_date: readingDate,
-        readings: FLATS.map((flat) => ({ flat, energy: Number(form[flat].energy), gas: Number(form[flat].gas) })),
-      });
-      navigate("/readings");
+      if (utility) {
+        await oakhillService.savePublicReadings(utility, {
+          reading_date: readingDate,
+          readings: FLATS.map((flat) => ({ flat, value: Number(form[flat][utility]) })),
+        });
+        setSaved(true);
+      } else {
+        await oakhillService.saveReadings({
+          reading_date: readingDate,
+          readings: FLATS.map((flat) => ({ flat, energy: Number(form[flat].energy), gas: Number(form[flat].gas) })),
+        });
+        navigate("/readings");
+      }
     } catch {
-      setError("Unable to save readings. Check that this date was not already entered.");
+      setError(utility ? `Unable to save ${utility} readings.` : "Unable to save readings. Check that this date was not already entered.");
     } finally {
       setSaving(false);
     }
   }
 
-  return (
-    <DashboardShell title="Add readings" subtitle="Record energy and gas meters for all flats">
-      <form className="oak-card grid gap-6 p-5" onSubmit={(event) => void saveReadings(event)}>
+  const formContent = (
+    <form className="oak-card grid gap-6 p-5" onSubmit={(event) => void saveReadings(event)}>
         <div className="flex flex-col gap-4 border-b border-oak-border pb-5 sm:flex-row sm:items-end sm:justify-between">
           <label className="grid gap-2 sm:w-56"><span className="oak-label">Reading date</span><input className="oak-input" type="date" value={readingDate} onChange={(event) => setReadingDate(event.target.value)} required /></label>
-          <Link className="oak-button-secondary" to="/readings">Cancel</Link>
+          {!publicForm ? <Link className="oak-button-secondary" to="/readings">Cancel</Link> : null}
         </div>
         {error ? <p className="rounded-xl bg-oak-dangerBg p-3 text-sm font-bold text-oak-danger">{error}</p> : null}
+        {saved ? <p className="rounded-xl bg-emerald-100 p-3 text-sm font-bold text-emerald-950">Readings saved successfully.</p> : null}
         <div className="grid gap-4 lg:grid-cols-3">
           {FLATS.map((flat) => <section className="rounded-2xl border border-oak-border p-4" key={flat}>
             <h2 className="text-lg font-extrabold text-oak-coffee">Flat {flat}</h2>
-            <div className="mt-4 grid gap-4"><label className="grid gap-2"><span className="oak-label">Energy</span><input aria-label={`Flat ${flat} energy`} className="oak-input" type="number" min="0" inputMode="numeric" value={form[flat].energy} onChange={(event) => updateReading(flat, "energy", event.target.value)} required /></label><label className="grid gap-2"><span className="oak-label">Gas</span><input aria-label={`Flat ${flat} gas`} className="oak-input" type="number" min="0" inputMode="numeric" value={form[flat].gas} onChange={(event) => updateReading(flat, "gas", event.target.value)} required /></label></div>
+            <div className="mt-4 grid gap-4">{fields.map((field) => <label className="grid gap-2" key={field}><span className="oak-label">{field === "energy" ? "Energy" : "Gas"}</span><input aria-label={`Flat ${flat} ${field}`} className="oak-input" type="number" min="0" inputMode="numeric" value={form[flat][field]} onChange={(event) => updateReading(flat, field, event.target.value)} required /></label>)}</div>
           </section>)}
         </div>
-        <div className="flex justify-end"><button className="oak-button-primary" disabled={saving} type="submit">{saving ? "Saving..." : "Save readings"}</button></div>
+        <div className="flex justify-end"><button className="oak-button-primary" disabled={saving} type="submit">{saving ? "Saving..." : utility ? `Save ${utility} readings` : "Save readings"}</button></div>
       </form>
+  );
+
+  if (publicForm) {
+    return <main className="min-h-dvh bg-oak-surface p-4"><section className="mx-auto max-w-3xl py-8"><header className="mb-5"><p className="oak-label">KCC</p><h1 className="mt-1 text-3xl font-extrabold text-oak-coffee">{formTitle}</h1></header>{formContent}</section></main>;
+  }
+
+  return (
+    <DashboardShell title={formTitle} subtitle="Record energy and gas meters for all flats">
+      {formContent}
     </DashboardShell>
   );
 }

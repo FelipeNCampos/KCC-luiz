@@ -30,7 +30,7 @@ function QrCard({ title, link, fileName }: { title: string; link: string; fileNa
 }
 
 export function QrCodesPage() {
-  const [tab, setTab] = useState<"general" | "stock" | "instructions">("general");
+  const [tab, setTab] = useState<"general" | "stock" | "instructions" | "readings">("general");
   const origin = window.location.origin;
   const accessLink = `${origin}/access`;
   const stockLink = `${origin}/stock-request`;
@@ -38,6 +38,10 @@ export function QrCodesPage() {
     flat,
     link: `${origin}/instructions-public?flat=${flat}`,
   }));
+  const readingLinks = [
+    { utility: "Energy", link: `${origin}/readings/energy` },
+    { utility: "Gas", link: `${origin}/readings/gas` },
+  ];
 
   return (
     <DashboardShell title="QR Codes" subtitle="Public form link for cleaner and contractor records">
@@ -50,6 +54,9 @@ export function QrCodesPage() {
         </button>
         <button className={tab === "instructions" ? "oak-button-primary" : "oak-button-secondary"} type="button" onClick={() => setTab("instructions")}>
           Guide Video
+        </button>
+        <button className={tab === "readings" ? "oak-button-primary" : "oak-button-secondary"} type="button" onClick={() => setTab("readings")}>
+          Readings
         </button>
       </div>
 
@@ -69,6 +76,14 @@ export function QrCodesPage() {
         <section className="grid gap-4 md:grid-cols-3">
           {instructionLinks.map((item) => (
             <QrCard key={item.flat} title={`Guide Video Flat ${item.flat}`} link={item.link} fileName={`qr-instructions-flat-${item.flat}.png`} />
+          ))}
+        </section>
+      ) : null}
+
+      {tab === "readings" ? (
+        <section className="grid gap-4 md:grid-cols-2">
+          {readingLinks.map((item) => (
+            <QrCard key={item.utility} title={`${item.utility} readings`} link={item.link} fileName={`qr-${item.utility.toLowerCase()}-readings.png`} />
           ))}
         </section>
       ) : null}

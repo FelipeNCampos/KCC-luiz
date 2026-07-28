@@ -170,16 +170,26 @@ class UtilityReadingBatchCreate(BaseModel):
     readings: list[UtilityReadingInput] = Field(min_length=3, max_length=3)
 
 
+class UtilityReadingPublicInput(BaseModel):
+    flat: Literal["50", "51", "52"]
+    value: int = Field(ge=0)
+
+
+class UtilityReadingPublicBatchCreate(BaseModel):
+    reading_date: date
+    readings: list[UtilityReadingPublicInput] = Field(min_length=3, max_length=3)
+
+
 class UtilityReadingRead(BaseModel):
     id: str
     flat: str
     building_name: str
     reading_date: date
     days: int | None
-    energy: int
+    energy: int | None
     energy_used: int | None
     energy_change_percent: float | None
-    gas: int
+    gas: int | None
     gas_used: int | None
     gas_change_percent: float | None
 

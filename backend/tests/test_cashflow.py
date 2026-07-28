@@ -515,6 +515,14 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     assert supplier_search.status_code == 200
     assert [item["supplier"] for item in supplier_search.json()["items"]] == ["Oak Maintenance"]
 
+    amount_search = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"month": "2026-04", "search": "200.00"},
+    )
+    assert amount_search.status_code == 200
+    assert [item["amount"] for item in amount_search.json()["items"]] == ["200.00"]
+
 
 def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClient) -> None:
     admin_token = get_admin_token(client, email="cashflow-52-admin@example.com")

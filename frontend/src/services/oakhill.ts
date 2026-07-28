@@ -87,10 +87,10 @@ export type UtilityReading = {
   building_name: string;
   reading_date: string;
   days: number | null;
-  energy: number;
+  energy: number | null;
   energy_used: number | null;
   energy_change_percent: number | null;
-  gas: number;
+  gas: number | null;
   gas_used: number | null;
   gas_change_percent: number | null;
 };
@@ -249,6 +249,13 @@ export const oakhillService = {
   },
   async saveReadings(payload: { reading_date: string; readings: Array<{ flat: "50" | "51" | "52"; energy: number; gas: number }> }) {
     const { data } = await api.post<ApiList<UtilityReading>>("/readings", payload);
+    return data;
+  },
+  async savePublicReadings(
+    utility: "energy" | "gas",
+    payload: { reading_date: string; readings: Array<{ flat: "50" | "51" | "52"; value: number }> },
+  ) {
+    const { data } = await api.post<{ count: number }>(`/readings/public/${utility}`, payload);
     return data;
   },
   async flatChecklist(flat: string) {

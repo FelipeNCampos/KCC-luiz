@@ -40,8 +40,8 @@ class UtilityReading(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_pk)
     reading_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    energy: Mapped[int] = mapped_column(Integer, nullable=False)
-    gas: Mapped[int] = mapped_column(Integer, nullable=False)
+    energy: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gas: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     building_id: Mapped[str] = mapped_column(String(36), ForeignKey("buildings.id"), nullable=False, index=True)
     condominio_id: Mapped[str] = mapped_column(String(36), ForeignKey("condominios.id"), nullable=False, index=True)

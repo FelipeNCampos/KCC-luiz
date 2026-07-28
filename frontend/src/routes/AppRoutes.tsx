@@ -61,6 +61,8 @@ export function AppRoutes() {
       <Route path="/access" element={<GeneralAccessPage />} />
       <Route path="/stock-request" element={<StockRequestPage />} />
       <Route path="/instructions-public" element={<FlatInstructionsPage />} />
+      <Route path="/readings/energy" element={<ReadingsFormPage utility="energy" publicForm />} />
+      <Route path="/readings/gas" element={<ReadingsFormPage utility="gas" publicForm />} />
       <Route path="/cash-flow/share/:token" element={<CashFlowSharedPage />} />
       <Route
         path="/"

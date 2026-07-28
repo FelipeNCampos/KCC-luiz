@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from conftest import TestingSessionLocal
 from fastapi.testclient import TestClient
 
-from app.models.oakhill import MaintenanceRecord
+from app.models.oakhill import MaintenanceRecord, UtilityReading
 
 from test_cashflow import get_admin_token
 
@@ -250,3 +250,37 @@ def test_readings_compare_energy_and_gas_consumption_for_each_flat(client: TestC
     assert latest["gas"] == 32309
     assert latest["gas_used"] == 293
     assert latest["gas_change_percent"] == 24.15
+
+
+def test_public_energy_and_gas_forms_merge_readings_for_the_same_date(client: TestClient) -> None:
+    energy_response = client.post(
+        "/api/v1/readings/public/energy",
+        json={
+            "reading_date": "2026-07-28",
+            "readings": [
+                {"flat": "50", "value": 5340},
+                {"flat": "51", "value": 1000},
+                {"flat": "52", "value": 3000},
+            ],
+        },
+    )
+    assert energy_response.status_code == 201
+
+    gas_response = client.post(
+        "/api/v1/readings/public/gas",
+        json={
+            "reading_date": "2026-07-28",
+            "readings": [
+                {"flat": "50", "value": 32309},
+                {"flat": "51", "value": 2000},
+                {"flat": "52", "value": 4000},
+            ],
+        },
+    )
+    assert gas_response.status_code == 201
+
+    with TestingSessionLocal() as db:
+        rows = list(db.query(UtilityReading).order_by(UtilityReading.building_id))
+
+    assert len(rows) == 3
+    assert {(row.energy, row.gas) for row in rows} == {(5340, 32309), (1000, 2000), (3000, 4000)}

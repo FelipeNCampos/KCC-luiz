@@ -62,4 +62,12 @@ describe("Readings pages", () => {
       ],
     })));
   });
+
+  it("shows only energy fields in the public energy form", () => {
+    render(<MemoryRouter><ReadingsFormPage utility="energy" publicForm /></MemoryRouter>);
+
+    expect(screen.getByRole("heading", { name: "Energy readings" })).toBeTruthy();
+    expect(screen.getByLabelText("Flat 50 energy")).toBeTruthy();
+    expect(screen.queryByLabelText("Flat 50 gas")).toBeNull();
+  });
 });
