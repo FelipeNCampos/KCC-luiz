@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from io import BytesIO
@@ -523,6 +524,18 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     assert amount_search.status_code == 200
     assert [item["amount"] for item in amount_search.json()["items"]] == ["200.00"]
 
+    all_search = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"month": "2026-04", "search": "rent", "all": "true"},
+    )
+    assert all_search.status_code == 200
+    assert [item["description"] for item in all_search.json()["items"]] == [
+        "Rent A101",
+        "Rent B202",
+    ]
+    assert all_search.json()["current_balance"] == "450.00"
+
 
 def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClient) -> None:
     admin_token = get_admin_token(client, email="cashflow-52-admin@example.com")
@@ -680,6 +693,80 @@ def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
     assert len(PdfReader(BytesIO(invoice_response.content)).pages) == 1
 
 
+def test_system_invoice_can_be_retrieved_and_updated_without_recreating_cashflow_record(
+    client: TestClient,
+) -> None:
+    admin_token = get_admin_token(client, email="system-invoice-editor@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    original_draft = {
+        "invoiceDate": "2026-04-10",
+        "invoiceNumber": "Inv-0042",
+        "to": "Flat 52",
+        "items": [
+            {
+                "id": "item-1",
+                "date": "2026-04-10",
+                "description": "Cleaning",
+                "qty": "2",
+                "rate": "25",
+            }
+        ],
+    }
+
+    created = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "Yes",
+            "invoice_number": "Inv-0042",
+            "date": "2026-04-10",
+            "value": "-50.00",
+            "description": "Cleaning",
+            "system_invoice_type": "cleaner",
+            "system_invoice_data": json.dumps(original_draft),
+        },
+        files={"invoice_media": ("invoice.pdf", make_invoice_pdf("Original"), "application/pdf")},
+    )
+
+    assert created.status_code == 201
+    record_id = created.json()["id"]
+    assert created.json()["system_invoice_type"] == "cleaner"
+
+    draft_response = client.get(f"/api/v1/cashflow/{record_id}/system-invoice", headers=headers)
+    assert draft_response.status_code == 200
+    assert draft_response.json() == {
+        "system_invoice_type": "cleaner",
+        "system_invoice_data": original_draft,
+    }
+
+    edited_draft = {**original_draft, "invoiceNumber": "Inv-0043", "to": "Flat 50"}
+    updated = client.patch(
+        f"/api/v1/cashflow/{record_id}/system-invoice",
+        headers=headers,
+        data={
+            "invoice_number": "Inv-0043",
+            "date": "2026-04-11",
+            "value": "-60.00",
+            "description": "Deep cleaning",
+            "flat": "50",
+            "system_invoice_type": "cleaner",
+            "system_invoice_data": json.dumps(edited_draft),
+        },
+        files={"invoice_media": ("invoice.pdf", make_invoice_pdf("Updated"), "application/pdf")},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["id"] == record_id
+    assert updated.json()["amount"] == "-60.00"
+    assert updated.json()["record_date"] == "2026-04-11"
+    assert updated.json()["invoice_number"] == "Inv-0043"
+    saved_draft = client.get(
+        f"/api/v1/cashflow/{record_id}/system-invoice",
+        headers=headers,
+    ).json()["system_invoice_data"]
+    assert saved_draft == edited_draft
+
+
 def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> None:
     admin_token = get_admin_token(client, email="update-admin@example.com")
     headers = {"Authorization": f"Bearer {admin_token}"}
@@ -782,6 +869,31 @@ def test_update_record_moves_it_to_another_cashflow(client: TestClient) -> None:
     )
     assert main_records.json()["items"] == []
     assert [item["id"] for item in cashflow_52_records.json()["items"]] == [record_id]
+
+
+def test_update_record_allows_changing_its_date(client: TestClient) -> None:
+    admin_token = get_admin_token(client, email="edit-date-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    created = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "No",
+            "date": "2026-04-12",
+            "value": "75.00",
+        },
+    )
+    assert created.status_code == 201
+
+    updated = client.patch(
+        f"/api/v1/cashflow/{created.json()['id']}",
+        headers=headers,
+        json={"record_date": "2026-04-15"},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["record_date"] == "2026-04-15"
 
 
 def test_delete_record(client: TestClient) -> None:

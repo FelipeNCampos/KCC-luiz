@@ -1,10 +1,19 @@
-import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AxiosError } from "axios";
-import { CircleDollarSign, FileSpreadsheet, Pencil, Plus, Search, Upload, X } from "lucide-react";
+import { CircleDollarSign, Download, FileSpreadsheet, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
 import { CashFlowShareLinksPanel } from "../components/CashFlowShareLinksPanel";
-import { cashFlowService, CashFlowListResponse, CashFlowRow, CashFlowScope } from "../services/cashflow";
+import { InvoiceModal } from "../components/InvoiceModal";
+import { InvoiceModalContractor } from "../components/InvoiceModalContractor";
+import {
+  cashFlowService,
+  CashFlowListResponse,
+  CashFlowRow,
+  CashFlowScope,
+  SystemInvoiceData,
+  SystemInvoiceType,
+} from "../services/cashflow";
 
 type FormState = {
   invoice: "Yes" | "No";
@@ -23,21 +32,22 @@ type PreviewState = {
   fileName: string;
 };
 
-type InvoiceEditorState = {
+type RecordEditorState = {
   record: CashFlowRow;
   invoiceNumber: string;
-  preview: PreviewState | null;
-  selectedFile: File | null;
-  error: string | null;
-};
-
-type TextEditorState = {
-  record: CashFlowRow;
+  date: string;
   value: string;
   description: string;
   supplier: string;
   flat: string;
+  preview: PreviewState | null;
   error: string | null;
+};
+
+type SystemInvoiceEditorState = {
+  recordId: number;
+  type: SystemInvoiceType;
+  draft: SystemInvoiceData;
 };
 
 type ReportFormState = {
@@ -102,8 +112,12 @@ const initialForm: FormState = {
 export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = true }: CashFlowPageProps = {}) {
   const monthInputRef = useRef<HTMLInputElement | null>(null);
   const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const recordRowRefs = useRef(new Map<number, HTMLTableRowElement>());
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
   const [search, setSearch] = useState("");
+  const [allRecords, setAllRecords] = useState(false);
+  const [highlightedRecordId, setHighlightedRecordId] = useState<number | null>(null);
+  const [pendingRecordFocus, setPendingRecordFocus] = useState<{ recordId: number; month: string } | null>(null);
   const [data, setData] = useState<CashFlowListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,12 +138,10 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [reportPreviewError, setReportPreviewError] = useState<string | null>(null);
   const [sendingReport, setSendingReport] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [invoiceEditor, setInvoiceEditor] = useState<InvoiceEditorState | null>(null);
-  const [savingInvoice, setSavingInvoice] = useState(false);
-  const [textEditor, setTextEditor] = useState<TextEditorState | null>(null);
-  const [savingText, setSavingText] = useState(false);
+  const [recordEditor, setRecordEditor] = useState<RecordEditorState | null>(null);
+  const [savingRecord, setSavingRecord] = useState(false);
   const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
-  const [expandedActionRecordId, setExpandedActionRecordId] = useState<number | null>(null);
+  const [systemInvoiceEditor, setSystemInvoiceEditor] = useState<SystemInvoiceEditorState | null>(null);
   const tableColumnCount = showFlat ? 8 : 7;
   const tableMinWidthClass = showFlat ? "min-w-[1000px]" : "min-w-[860px]";
   const summaryLeadingColumnSpan = showFlat ? 6 : 5;
@@ -142,7 +154,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     setError(null);
 
     cashFlowService
-      .list({ month, search, scope })
+      .list({ month, search, scope, all: allRecords })
       .then((response) => {
         if (!active) return;
         setData(response);
@@ -159,15 +171,31 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     return () => {
       active = false;
     };
-  }, [month, scope, search]);
+  }, [allRecords, month, scope, search]);
+
+  useEffect(() => {
+    if (
+      !pendingRecordFocus ||
+      allRecords ||
+      loading ||
+      data?.month !== pendingRecordFocus.month
+    ) {
+      return;
+    }
+
+    const recordRow = recordRowRefs.current.get(pendingRecordFocus.recordId);
+    if (!recordRow) return;
+
+    recordRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    setPendingRecordFocus(null);
+  }, [allRecords, data?.month, loading, pendingRecordFocus]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setIsCreateOpen(false);
       setIsReportOpen(false);
-      setTextEditor(null);
-      closeInvoiceEditor();
+      closeRecordEditor();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -176,11 +204,11 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
 
   useEffect(() => {
     return () => {
-      if (invoiceEditor?.preview) {
-        URL.revokeObjectURL(invoiceEditor.preview.url);
+      if (recordEditor?.preview) {
+        URL.revokeObjectURL(recordEditor.preview.url);
       }
     };
-  }, [invoiceEditor?.preview]);
+  }, [recordEditor?.preview]);
 
   useEffect(() => {
     return () => {
@@ -256,7 +284,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const openingBalance = useMemo(() => formatCurrency(openingBalanceValue), [openingBalanceValue]);
 
   async function reload() {
-    const response = await cashFlowService.list({ month, search, scope });
+    const response = await cashFlowService.list({ month, search, scope, all: allRecords });
     setData(response);
   }
 
@@ -310,6 +338,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     setFeedback(null);
     try {
       await cashFlowService.remove(recordId);
+      closeRecordEditor();
       setFeedback({ type: "success", message: "Record deleted successfully." });
       await reload();
     } catch (requestError) {
@@ -324,6 +353,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     setFeedback(null);
     try {
       await cashFlowService.update(recordId, { scope: moveTargetScope });
+      closeRecordEditor();
       setFeedback({ type: "success", message: `Record moved to ${moveTargetTitle}.` });
       await reload();
     } catch (requestError) {
@@ -332,60 +362,68 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     }
   }
 
-  function toggleRecordActions(recordId: number) {
-    setExpandedActionRecordId((current) => (current === recordId ? null : recordId));
-  }
-
-  async function handleOpenInvoiceEditor(row: CashFlowRow) {
+  async function handleOpenRecordEditor(row: CashFlowRow) {
     setFeedback(null);
 
-    if (!row.has_invoice) {
-      setInvoiceEditor({
-        record: row,
-        invoiceNumber: row.invoice_number ?? "",
-        preview: null,
-        selectedFile: null,
-        error: null
-      });
-      return;
-    }
+    const createEditor = (preview: PreviewState | null): RecordEditorState => ({
+      record: row,
+      invoiceNumber: row.invoice_number ?? "",
+      date: row.record_date,
+      value: row.amount,
+      description: row.description ?? "",
+      supplier: row.supplier ?? "",
+      flat: normalizeFlatValue(row.flat),
+      preview,
+      error: null
+    });
 
     try {
-      if (!row.invoice_media_name) {
-        setInvoiceEditor({
-          record: row,
-          invoiceNumber: row.invoice_number ?? "",
-          preview: null,
-          selectedFile: null,
-          error: null
-        });
+      if (!row.has_invoice || !row.invoice_media_name) {
+        setRecordEditor(createEditor(null));
         return;
       }
 
       const media = await cashFlowService.getInvoiceMedia(row.id);
       const objectUrl = URL.createObjectURL(media.blob);
-      if (invoiceEditor?.preview) {
-        URL.revokeObjectURL(invoiceEditor.preview.url);
+      if (recordEditor?.preview) {
+        URL.revokeObjectURL(recordEditor.preview.url);
       }
-      setInvoiceEditor({
-        record: row,
-        invoiceNumber: row.invoice_number ?? "",
-        preview: {
+      setRecordEditor(createEditor({
           url: objectUrl,
           contentType: media.contentType ?? "application/octet-stream",
           fileName: row.invoice_media_name ?? "invoice"
-        },
-        selectedFile: null,
-        error: null
+      }));
+    } catch {
+      setRecordEditor(createEditor(null));
+    }
+  }
+
+  function handleRecordClick(row: CashFlowRow) {
+    if (allRecords) {
+      const recordMonth = row.record_date.slice(0, 7);
+      setHighlightedRecordId(row.id);
+      setPendingRecordFocus({ recordId: row.id, month: recordMonth });
+      setAllRecords(false);
+      setMonth(recordMonth);
+      return;
+    }
+
+    if (pendingRecordFocus) return;
+    void handleOpenRecordEditor(row);
+  }
+
+  async function handleOpenSystemInvoiceEditor(row: CashFlowRow) {
+    setFeedback(null);
+    try {
+      const invoice = await cashFlowService.getSystemInvoice(row.id);
+      setSystemInvoiceEditor({
+        recordId: row.id,
+        type: invoice.system_invoice_type,
+        draft: invoice.system_invoice_data,
       });
     } catch (requestError) {
-      setInvoiceEditor({
-        record: row,
-        invoiceNumber: row.invoice_number ?? "",
-        preview: null,
-        selectedFile: null,
-        error: null
-      });
+      const axiosError = requestError as AxiosError<{ detail?: string }>;
+      setFeedback({ type: "error", message: axiosError.response?.data?.detail ?? "Unable to open system invoice." });
     }
   }
 
@@ -437,11 +475,8 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     }
   }
 
-  function closeInvoiceEditor() {
-    if (invoiceEditor?.preview) {
-      URL.revokeObjectURL(invoiceEditor.preview.url);
-    }
-    setInvoiceEditor(null);
+  function closeRecordEditor() {
+    setRecordEditor(null);
   }
 
   function clearCreateInvoicePreview() {
@@ -482,90 +517,54 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     });
   }
 
-  function handleInvoiceFileSelect(file: File | null) {
-    if (!invoiceEditor || !file) return;
-    if (invoiceEditor.preview) {
-      URL.revokeObjectURL(invoiceEditor.preview.url);
-    }
-    setInvoiceEditor({
-      ...invoiceEditor,
-      selectedFile: file,
-      preview: {
-        url: URL.createObjectURL(file),
-        contentType: file.type || "application/octet-stream",
-        fileName: file.name
-      },
-      error: null
-    });
+  function handleDownloadInvoiceMedia() {
+    if (!recordEditor?.preview) return;
+    const link = document.createElement("a");
+    link.href = recordEditor.preview.url;
+    link.download = recordEditor.preview.fileName;
+    link.click();
   }
 
-  async function handleSaveInvoice() {
-    if (!invoiceEditor?.selectedFile && !invoiceEditor?.invoiceNumber.trim()) {
-      setInvoiceEditor((current) => (current ? { ...current, error: "Add an invoice number or select an image or PDF first." } : current));
-      return;
-    }
-
-    setSavingInvoice(true);
-    try {
-      await cashFlowService.updateInvoiceMedia(invoiceEditor.record.id, {
-        invoiceMedia: invoiceEditor.selectedFile,
-        invoiceNumber: invoiceEditor.invoiceNumber.trim()
-      });
-      closeInvoiceEditor();
-      setFeedback({ type: "success", message: "Invoice updated successfully." });
-      await reload();
-    } catch (requestError) {
-      const axiosError = requestError as AxiosError<{ detail?: string }>;
-      setInvoiceEditor((current) =>
-        current ? { ...current, error: axiosError.response?.data?.detail ?? "Unable to update invoice media." } : current
-      );
-    } finally {
-      setSavingInvoice(false);
-    }
-  }
-
-  function openTextEditor(row: CashFlowRow) {
-    setFeedback(null);
-    setTextEditor({
-      record: row,
-      value: row.amount,
-      description: row.description ?? "",
-      supplier: row.supplier ?? "",
-      flat: normalizeFlatValue(row.flat),
-      error: null
-    });
-  }
-
-  async function handleSaveText(event: FormEvent<HTMLFormElement>) {
+  async function handleSaveRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!textEditor) return;
+    if (!recordEditor) return;
 
-    const parsedValue = Number(textEditor.value);
-    if (!textEditor.value.trim() || !Number.isFinite(parsedValue)) {
-      setTextEditor((current) => (current ? { ...current, error: "Enter a valid value." } : current));
+    const parsedValue = Number(recordEditor.value);
+    if (!recordEditor.date || !recordEditor.value.trim() || !Number.isFinite(parsedValue)) {
+      setRecordEditor((current) => (current ? { ...current, error: "Enter a valid date and value." } : current));
       return;
     }
     if (parsedValue === 0) {
-      setTextEditor((current) => (current ? { ...current, error: "Value must be different from zero." } : current));
+      setRecordEditor((current) => (current ? { ...current, error: "Value must be different from zero." } : current));
       return;
     }
 
-    setSavingText(true);
+    setSavingRecord(true);
     try {
-      await cashFlowService.update(textEditor.record.id, {
-        value: textEditor.value,
-        description: textEditor.description.trim() || null,
-        supplier: textEditor.supplier.trim() || null,
-        flat: showFlat ? textEditor.flat.trim() || null : null
+      await cashFlowService.update(recordEditor.record.id, {
+        recordDate: recordEditor.date,
+        value: recordEditor.value,
+        description: recordEditor.description.trim() || null,
+        supplier: recordEditor.supplier.trim() || null,
+        flat: showFlat ? recordEditor.flat.trim() || null : null
       });
-      setTextEditor(null);
+      const invoiceNumber = recordEditor.invoiceNumber.trim();
+      if (invoiceNumber !== (recordEditor.record.invoice_number ?? "")) {
+        await cashFlowService.updateInvoiceMedia(recordEditor.record.id, {
+          invoiceMedia: null,
+          invoiceNumber
+        });
+      }
+      closeRecordEditor();
       setFeedback({ type: "success", message: "Record updated successfully." });
       await reload();
     } catch (requestError) {
       const axiosError = requestError as AxiosError<{ detail?: string }>;
-      setTextEditor((current) => (current ? { ...current, error: axiosError.response?.data?.detail ?? "Unable to update record." } : current));
+      setRecordEditor((current) =>
+        current ? { ...current, error: axiosError.response?.data?.detail ?? "Unable to update record." } : current
+      );
     } finally {
-      setSavingText(false);
+      setSavingRecord(false);
     }
   }
 
@@ -625,6 +624,15 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
             />
             </span>
           </label>
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 pb-2 text-sm font-bold text-oak-coffee">
+            <input
+              className="size-4 rounded border-oak-borderStrong"
+              type="checkbox"
+              checked={allRecords}
+              onChange={(event) => setAllRecords(event.target.checked)}
+            />
+            All
+          </label>
         </div>
       }
     >
@@ -632,11 +640,11 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
         <article className="oak-card p-6">
           <div className="grid overflow-hidden rounded-xl border border-oak-border bg-oak-panel sm:grid-cols-2">
             <div className="p-4 text-center sm:border-r sm:border-oak-border">
-              <p className="oak-label">Last Month</p>
+                <p className="oak-label">{allRecords ? "Opening balance" : "Last Month"}</p>
               <p className={`mt-2 text-2xl font-extrabold ${openingBalanceValue >= 0 ? "text-oak-coffee" : "text-[#cf0e0e]"}`}>{openingBalance}</p>
             </div>
             <div className="p-4 text-center">
-              <p className="oak-label">This Month</p>
+                <p className="oak-label">{allRecords ? "All records" : "This Month"}</p>
               <p className={`mt-2 text-2xl font-extrabold ${thisMonthValue >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}>
                 {thisMonth}
               </p>
@@ -700,38 +708,26 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 <>
                   {data.items.length > 0 ? (
                     data.items.map((row) => (
-                      <Fragment key={row.id}>
                       <tr
-                        className="cursor-pointer bg-white transition-colors hover:bg-oak-surface"
-                        onClick={() => toggleRecordActions(row.id)}
+                        className={`cursor-pointer transition-colors hover:bg-oak-surface ${
+                          highlightedRecordId === row.id
+                            ? "bg-amber-100 ring-2 ring-inset ring-amber-400"
+                            : "bg-white"
+                        }`}
+                        data-highlighted={highlightedRecordId === row.id || undefined}
+                        key={row.id}
+                        onClick={() => handleRecordClick(row)}
+                        ref={(element) => {
+                          if (element) {
+                            recordRowRefs.current.set(row.id, element);
+                          } else {
+                            recordRowRefs.current.delete(row.id);
+                          }
+                        }}
                       >
                         <td className="px-4 py-3 text-sm font-bold text-oak-coffee">#{row.payment_number}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-oak-coffee">
-                          {row.has_invoice ? (
-                            <button
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-oak-border px-2.5 py-1.5 text-xs font-extrabold text-oak-coffee transition-colors hover:bg-oak-panel"
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void handleOpenInvoiceEditor(row);
-                              }}
-                            >
-                              <Pencil size={14} />
-                              View / update
-                            </button>
-                          ) : (
-                            <button
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-oak-borderStrong px-2.5 py-1.5 text-xs font-extrabold text-oak-coffee transition-colors hover:bg-oak-panel"
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void handleOpenInvoiceEditor(row);
-                              }}
-                            >
-                              <Plus size={14} />
-                              Add
-                            </button>
-                          )}
+                          {row.has_invoice ? row.invoice_number ?? "Invoice available" : "—"}
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
                         <td
@@ -740,44 +736,14 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                           {formatCurrency(row.amount)}
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                          <button
-                            className="inline-flex max-w-72 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openTextEditor(row);
-                            }}
-                          >
-                            {row.description ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
-                            <span className="truncate">{row.description ?? "Add"}</span>
-                          </button>
+                          <span className="block max-w-72 truncate">{row.description ?? "—"}</span>
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                          <button
-                            className="inline-flex max-w-56 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openTextEditor(row);
-                            }}
-                          >
-                            {row.supplier ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
-                            <span className="truncate">{row.supplier ?? "Add"}</span>
-                          </button>
+                          <span className="block max-w-56 truncate">{row.supplier ?? "—"}</span>
                         </td>
                         {showFlat ? (
                           <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                            <button
-                              className="inline-flex max-w-40 items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-oak-panel"
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openTextEditor(row);
-                              }}
-                            >
-                              {row.flat ? <Pencil className="shrink-0" size={14} /> : <Plus className="shrink-0" size={14} />}
-                              <span className="truncate">{row.flat ?? "Add"}</span>
-                            </button>
+                            <span className="block max-w-40 truncate">{row.flat ?? "—"}</span>
                           </td>
                         ) : null}
                         <td
@@ -786,36 +752,6 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                           {formatAbsoluteCurrency(row.balance)}
                         </td>
                       </tr>
-                      {expandedActionRecordId === row.id ? (
-                        <tr className="bg-oak-surface">
-                          <td className="px-4 py-3" colSpan={tableColumnCount}>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="mr-1 text-xs font-extrabold uppercase tracking-[0.08em] text-oak-muted">Actions</span>
-                          <button
-                            className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleMoveRecord(row.id);
-                            }}
-                          >
-                            Move to {moveTargetTitle}
-                          </button>
-                          <button
-                            className="oak-button-secondary !min-h-9 !px-3 !py-1.5"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleDeleteRecord(row.id);
-                            }}
-                          >
-                            Delete
-                          </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                      </Fragment>
                     ))
                   ) : (
                     <tr>
@@ -1071,9 +1007,9 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
         </div>
       ) : null}
 
-      {textEditor ? (
+      {recordEditor ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
-          <article className="w-full max-w-md rounded-2xl border border-oak-border bg-white shadow-oakLg">
+          <article className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
                 <p className="oak-label">{title}</p>
@@ -1082,163 +1018,210 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
               <button
                 className="grid size-9 place-items-center rounded-lg border border-oak-border"
                 type="button"
-                onClick={() => setTextEditor(null)}
-                disabled={savingText}
+                onClick={closeRecordEditor}
+                disabled={savingRecord}
               >
                 <X size={17} />
               </button>
             </header>
 
-            <form className="grid gap-4 p-6" onSubmit={handleSaveText}>
-              <label className="grid gap-2">
-                <span className="oak-label">Value</span>
-                <input
-                  className="oak-input"
-                  step="0.01"
-                  type="number"
-                  value={textEditor.value}
-                  onChange={(event) => setTextEditor((current) => (current ? { ...current, value: event.target.value, error: null } : current))}
-                  required
-                />
-              </label>
+            <form className="grid min-h-0 flex-1 lg:grid-cols-2" onSubmit={handleSaveRecord}>
+              <section className="flex min-h-0 flex-col overflow-y-auto border-b border-oak-border p-5 lg:border-b-0 lg:border-r sm:p-6">
+                <div className="grid gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="grid gap-2">
+                      <span className="oak-label">Invoice number</span>
+                      <input
+                        className="oak-input"
+                        maxLength={120}
+                        value={recordEditor.invoiceNumber}
+                        onChange={(event) => setRecordEditor((current) => (current ? { ...current, invoiceNumber: event.target.value, error: null } : current))}
+                      />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="oak-label">Date</span>
+                      <input
+                        className="oak-input"
+                        type="date"
+                        value={recordEditor.date}
+                        onChange={(event) => setRecordEditor((current) => (current ? { ...current, date: event.target.value, error: null } : current))}
+                        required
+                      />
+                    </label>
+                  </div>
 
-              <label className="grid gap-2">
-                <span className="oak-label">Comments</span>
-                <textarea
-                  className="oak-input min-h-28 resize-y"
-                  maxLength={255}
-                  value={textEditor.description}
-                  onChange={(event) => setTextEditor((current) => (current ? { ...current, description: event.target.value, error: null } : current))}
-                />
-              </label>
+                  <label className="grid gap-2">
+                    <span className="oak-label">Value</span>
+                    <input
+                      className="oak-input"
+                      step="0.01"
+                      type="number"
+                      value={recordEditor.value}
+                      onChange={(event) => setRecordEditor((current) => (current ? { ...current, value: event.target.value, error: null } : current))}
+                      required
+                    />
+                  </label>
 
-              <label className="grid gap-2">
-                <span className="oak-label">Supplier</span>
-                <input
-                  className="oak-input"
-                  maxLength={255}
-                  value={textEditor.supplier}
-                  onChange={(event) => setTextEditor((current) => (current ? { ...current, supplier: event.target.value, error: null } : current))}
-                />
-              </label>
+                  <label className="grid gap-2">
+                    <span className="oak-label">Comments</span>
+                    <textarea
+                      className="oak-input min-h-28 resize-y"
+                      maxLength={255}
+                      value={recordEditor.description}
+                      onChange={(event) => setRecordEditor((current) => (current ? { ...current, description: event.target.value, error: null } : current))}
+                    />
+                  </label>
 
-              {showFlat ? (
-                <label className="grid gap-2">
-                  <span className="oak-label">Flat</span>
-                  <select
-                    className="oak-input"
-                    value={textEditor.flat || ""}
-                    onChange={(event) => setTextEditor((current) => (current ? { ...current, flat: event.target.value, error: null } : current))}
+                  <label className="grid gap-2">
+                    <span className="oak-label">Supplier</span>
+                    <input
+                      className="oak-input"
+                      maxLength={255}
+                      value={recordEditor.supplier}
+                      onChange={(event) => setRecordEditor((current) => (current ? { ...current, supplier: event.target.value, error: null } : current))}
+                    />
+                  </label>
+
+                  {showFlat ? (
+                    <label className="grid gap-2">
+                      <span className="oak-label">Flat</span>
+                      <select
+                        className="oak-input"
+                        value={recordEditor.flat}
+                        onChange={(event) => setRecordEditor((current) => (current ? { ...current, flat: event.target.value, error: null } : current))}
+                      >
+                        <option value="">Select a flat</option>
+                        {FLAT_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  {recordEditor.error ? <p className="text-sm font-bold text-oak-danger">{recordEditor.error}</p> : null}
+                </div>
+
+                <footer className="mt-auto flex flex-nowrap items-center gap-3 overflow-x-auto border-t border-oak-border pt-5">
+                  <button
+                    aria-label="Delete record"
+                    className="oak-button-secondary grid shrink-0 !size-10 !min-h-10 !p-0 !text-oak-danger"
+                    title="Delete record"
+                    type="button"
+                    onClick={() => void handleDeleteRecord(recordEditor.record.id)}
+                    disabled={savingRecord}
                   >
-                    <option value="">Select a flat</option>
-                    {FLAT_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+                    <Trash2 size={17} />
+                  </button>
+                  <button
+                    className="oak-button-secondary shrink-0 whitespace-nowrap"
+                    type="button"
+                    onClick={() => void handleMoveRecord(recordEditor.record.id)}
+                    disabled={savingRecord}
+                  >
+                    Move to {moveTargetTitle}
+                  </button>
+                  <div className="ml-auto flex shrink-0 gap-3">
+                    <button className="oak-button-secondary" type="button" onClick={closeRecordEditor} disabled={savingRecord}>
+                      Cancel
+                    </button>
+                    <button className="oak-button-primary" type="submit" disabled={savingRecord}>
+                      {savingRecord ? "Saving..." : "Save changes"}
+                    </button>
+                  </div>
+                </footer>
+              </section>
 
-              {textEditor.error ? <p className="text-sm font-bold text-oak-danger">{textEditor.error}</p> : null}
+              <section className="flex min-h-0 flex-col bg-oak-panel/40">
+                <header className="flex items-center justify-between gap-3 border-b border-oak-border bg-white px-5 py-4 sm:px-6">
+                  <div className="min-w-0">
+                    <p className="oak-label">Invoice media</p>
+                    <h3 className="truncate text-sm font-extrabold text-oak-coffee">
+                      {recordEditor.preview?.fileName ?? "No invoice media"}
+                    </h3>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      aria-label="Download invoice media"
+                      className="oak-button-secondary grid !size-10 !min-h-10 !p-0"
+                      disabled={!recordEditor.preview}
+                      title="Download invoice media"
+                      type="button"
+                      onClick={handleDownloadInvoiceMedia}
+                    >
+                      <Download size={17} />
+                    </button>
+                    {recordEditor.record.system_invoice_type === "cleaner" || recordEditor.record.system_invoice_type === "contractor" ? (
+                      <button
+                        aria-label="Edit invoice media"
+                        className="oak-button-secondary grid !size-10 !min-h-10 !p-0"
+                        title="Edit invoice media"
+                        type="button"
+                        onClick={() => void handleOpenSystemInvoiceEditor(recordEditor.record)}
+                      >
+                        <Pencil size={17} />
+                      </button>
+                    ) : null}
+                  </div>
+                </header>
 
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <button className="oak-button-secondary" type="button" onClick={() => setTextEditor(null)} disabled={savingText}>
-                  Cancel
-                </button>
-                <button className="oak-button-primary" type="submit" disabled={savingText}>
-                  {savingText ? "Saving..." : "Save"}
-                </button>
-              </div>
+                <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
+                  {recordEditor.preview ? (
+                    recordEditor.preview.contentType.startsWith("image/") ? (
+                      <img
+                        alt="Invoice preview"
+                        className="mx-auto max-h-[62dvh] rounded-lg border border-oak-border bg-white"
+                        src={recordEditor.preview.url}
+                      />
+                    ) : (
+                      <iframe className="h-[62dvh] min-h-[420px] w-full rounded-lg border border-oak-border bg-white" src={recordEditor.preview.url} title="Invoice preview" />
+                    )
+                  ) : (
+                    <div className="grid h-full min-h-64 place-items-center rounded-lg border border-dashed border-oak-border bg-white p-6 text-center text-sm font-semibold text-black/55">
+                      No invoice media is attached to this record.
+                    </div>
+                  )}
+                </div>
+              </section>
             </form>
           </article>
         </div>
       ) : null}
-
-      {invoiceEditor ? (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
-          <article className="w-full max-w-4xl rounded-2xl border border-oak-border bg-white shadow-oakLg">
-            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
-              <div>
-                <p className="oak-label">Invoice media</p>
-                <h2 className="text-lg font-extrabold text-oak-coffee">
-                  {invoiceEditor.preview?.fileName ?? `Invoice No #${invoiceEditor.record.payment_number}`}
-                </h2>
-              </div>
-              <button
-                className="grid size-9 place-items-center rounded-lg border border-oak-border"
-                type="button"
-                onClick={closeInvoiceEditor}
-                disabled={savingInvoice}
-              >
-                <X size={17} />
-              </button>
-            </header>
-
-            <div className="grid gap-4 p-4">
-              <label className="grid gap-2">
-                <span className="oak-label">Invoice number</span>
-                <input
-                  className="oak-input"
-                  maxLength={120}
-                  value={invoiceEditor.invoiceNumber}
-                  onChange={(event) =>
-                    setInvoiceEditor((current) => (current ? { ...current, invoiceNumber: event.target.value, error: null } : current))
-                  }
-                />
-              </label>
-
-              <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-oak-borderStrong bg-oak-surface px-3.5 py-2.5 text-sm font-semibold text-oak-coffee">
-                <Upload size={16} />
-                <span>{invoiceEditor.selectedFile?.name ?? (invoiceEditor.record.has_invoice ? "Replace image or PDF" : "Add image or PDF")}</span>
-                <input
-                  className="hidden"
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(event) => handleInvoiceFileSelect(event.target.files?.[0] ?? null)}
-                />
-              </label>
-
-              {invoiceEditor.preview ? (
-                <div className="max-h-[62dvh] overflow-auto">
-                  {invoiceEditor.preview.contentType.startsWith("image/") ? (
-                    <img
-                      alt="Invoice preview"
-                      className="mx-auto max-h-[58dvh] rounded-lg border border-oak-border"
-                      src={invoiceEditor.preview.url}
-                    />
-                  ) : (
-                    <iframe className="h-[58dvh] w-full rounded-lg border border-oak-border" src={invoiceEditor.preview.url} title="Invoice preview" />
-                  )}
-                </div>
-              ) : (
-                <div className="grid min-h-44 place-items-center rounded-lg border border-dashed border-oak-border bg-oak-panel text-sm font-semibold text-black/55">
-                  No invoice media added yet.
-                </div>
-              )}
-
-              {invoiceEditor.error ? <p className="text-sm font-bold text-oak-danger">{invoiceEditor.error}</p> : null}
-            </div>
-
-            <footer className="flex justify-end gap-3 border-t border-oak-border px-6 py-4">
-              <button className="oak-button-secondary" type="button" onClick={closeInvoiceEditor} disabled={savingInvoice}>
-                Close
-              </button>
-              {invoiceEditor.preview ? (
-                <button
-                  className="oak-button-secondary"
-                  type="button"
-                  onClick={() => invoiceEditor.preview && window.open(invoiceEditor.preview.url, "_blank", "noopener,noreferrer")}
-                >
-                  Open in new tab
-                </button>
-              ) : null}
-              <button className="oak-button-primary" type="button" onClick={() => void handleSaveInvoice()} disabled={savingInvoice}>
-                {savingInvoice ? "Saving..." : invoiceEditor.record.has_invoice ? "Update invoice" : "Add invoice"}
-              </button>
-            </footer>
-          </article>
-        </div>
+      {systemInvoiceEditor ? (
+        <>
+          {systemInvoiceEditor.type === "cleaner" ? (
+            <InvoiceModal
+              open
+              sourceLabel="Cleaner"
+              defaultDescription="Cleaner service invoice"
+              editingRecordId={systemInvoiceEditor.recordId}
+              editingScope={scope}
+              editingDraft={systemInvoiceEditor.draft}
+              onClose={() => setSystemInvoiceEditor(null)}
+              onUpdated={(message) => {
+                closeRecordEditor();
+                setFeedback({ type: "success", message });
+                void reload();
+              }}
+            />
+          ) : (
+            <InvoiceModalContractor
+              open
+              sourceLabel="Contractor"
+              defaultDescription="Contractor service invoice"
+              editingRecordId={systemInvoiceEditor.recordId}
+              editingScope={scope}
+              editingDraft={systemInvoiceEditor.draft}
+              onClose={() => setSystemInvoiceEditor(null)}
+              onUpdated={(message) => {
+                closeRecordEditor();
+                setFeedback({ type: "success", message });
+                void reload();
+              }}
+            />
+          )}
+        </>
       ) : null}
     </DashboardShell>
   );

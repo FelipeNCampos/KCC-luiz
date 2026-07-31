@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
@@ -18,7 +19,13 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from app.models.cashflow import CASHFLOW_52_SCOPE, DEFAULT_CASHFLOW_SCOPE, CashFlowRecord
 from app.repositories.cashflow_repository import CashFlowRepository
-from app.schemas.cashflow import CashFlowCreate, CashFlowListResponse, CashFlowRow, CashFlowUpdate
+from app.schemas.cashflow import (
+    CashFlowCreate,
+    CashFlowListResponse,
+    CashFlowRow,
+    CashFlowSystemInvoice,
+    CashFlowUpdate,
+)
 from app.services.email_service import EmailService
 
 
@@ -50,11 +57,20 @@ class CashFlowService:
         invoice_media_name: str | None = None,
         invoice_media_mime: str | None = None,
         invoice_media_data: bytes | None = None,
+        system_invoice_type: str | None = None,
+        system_invoice_data: str | None = None,
     ) -> CashFlowRecord:
         description = self._clean_optional_text(payload.description)
         invoice_number = self._clean_optional_text(payload.invoice_number)
         supplier = self._clean_optional_text(payload.supplier)
         cashflow_scope = self._normalize_scope(payload.scope)
+        (
+            normalized_system_invoice_type,
+            normalized_system_invoice_data,
+        ) = self._normalize_system_invoice(
+            system_invoice_type,
+            system_invoice_data,
+        )
         flat = (
             payload.flat.strip()
             if self._scope_has_flat(cashflow_scope) and payload.flat and payload.flat.strip()
@@ -69,6 +85,8 @@ class CashFlowService:
             invoice_media_name=invoice_media_name if payload.has_invoice else None,
             invoice_media_mime=invoice_media_mime if payload.has_invoice else None,
             invoice_media_data=invoice_media_data if payload.has_invoice else None,
+            system_invoice_type=normalized_system_invoice_type,
+            system_invoice_data=normalized_system_invoice_data,
             record_date=payload.record_date,
             amount=payload.value,
             description=description,
@@ -83,7 +101,18 @@ class CashFlowService:
         month: str | None,
         search: str | None = None,
         scope: str | None = None,
+        include_all: bool = False,
     ) -> CashFlowListResponse:
+        if include_all:
+            cashflow_scope = self._normalize_scope(scope)
+            return self._listing_for_records(
+                period_label="All",
+                records=self.repository.list_all_records(cashflow_scope),
+                opening_balance=Decimal("0"),
+                search=search,
+                cashflow_scope=cashflow_scope,
+            )
+
         month_label, month_start, month_end = self._parse_month(month)
         return self.list_range(month_label, month_start, month_end, search, scope)
 
@@ -100,8 +129,24 @@ class CashFlowService:
     ) -> CashFlowListResponse:
         cashflow_scope = self._normalize_scope(scope)
         records = self.repository.list_range_records(start_date, end_date, cashflow_scope)
-        query = (search or "").strip().lower()
         opening_balance = self.repository.get_balance_before(start_date, cashflow_scope)
+        return self._listing_for_records(
+            period_label=period_label,
+            records=records,
+            opening_balance=opening_balance,
+            search=search,
+            cashflow_scope=cashflow_scope,
+        )
+
+    def _listing_for_records(
+        self,
+        period_label: str,
+        records: list[CashFlowRecord],
+        opening_balance: Decimal,
+        search: str | None,
+        cashflow_scope: str,
+    ) -> CashFlowListResponse:
+        query = (search or "").strip().lower()
         running_balance = opening_balance
         period_total = Decimal("0")
         items: list[CashFlowRow] = []
@@ -130,6 +175,7 @@ class CashFlowService:
                     has_invoice=record.has_invoice,
                     invoice_number=record.invoice_number,
                     invoice_media_name=record.invoice_media_name,
+                    system_invoice_type=record.system_invoice_type,
                     record_date=record.record_date,
                     amount=record.amount,
                     description=record.description,
@@ -179,6 +225,8 @@ class CashFlowService:
                 if self._scope_has_flat(record.cashflow_scope)
                 else None
             )
+        if "record_date" in payload.model_fields_set and payload.record_date is not None:
+            record.record_date = payload.record_date
         if "value" in payload.model_fields_set and payload.value is not None:
             record.amount = payload.value
         return self.repository.save(record)
@@ -208,6 +256,74 @@ class CashFlowService:
             record.invoice_media_data = invoice_media_data
         elif record.invoice_number:
             record.has_invoice = True
+        return self.repository.save(record)
+
+    def get_system_invoice(self, record_id: int) -> CashFlowSystemInvoice:
+        record = self.repository.get_by_id(record_id)
+        if record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Cash flow record not found",
+            )
+        if not record.system_invoice_type or not record.system_invoice_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="System invoice data not found",
+            )
+
+        system_invoice_type, system_invoice_data = self._normalize_system_invoice(
+            record.system_invoice_type,
+            record.system_invoice_data,
+        )
+        return CashFlowSystemInvoice(
+            system_invoice_type=system_invoice_type,
+            system_invoice_data=json.loads(system_invoice_data),
+        )
+
+    def update_system_invoice(
+        self,
+        record_id: int,
+        payload: CashFlowUpdate,
+        record_date: date,
+        invoice_number: str,
+        invoice_media_name: str,
+        invoice_media_mime: str | None,
+        invoice_media_data: bytes,
+        system_invoice_type: str,
+        system_invoice_data: str,
+    ) -> CashFlowRecord:
+        record = self.repository.get_by_id(record_id)
+        if record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Cash flow record not found",
+            )
+
+        normalized_type, normalized_data = self._normalize_system_invoice(
+            system_invoice_type,
+            system_invoice_data,
+        )
+        if record.system_invoice_type != normalized_type:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Only system-generated invoices can be edited here",
+            )
+
+        record.record_date = record_date
+        record.amount = payload.value
+        record.description = self._clean_optional_text(payload.description)
+        record.supplier = self._clean_optional_text(payload.supplier)
+        record.flat = (
+            self._clean_optional_text(payload.flat)
+            if self._scope_has_flat(record.cashflow_scope)
+            else None
+        )
+        record.invoice_number = self._clean_optional_text(invoice_number)
+        record.invoice_media_name = invoice_media_name or "invoice"
+        record.invoice_media_mime = invoice_media_mime
+        record.invoice_media_data = invoice_media_data
+        record.has_invoice = True
+        record.system_invoice_data = normalized_data
         return self.repository.save(record)
 
     def get_invoice_media(self, record_id: int) -> tuple[str, str, bytes]:
@@ -780,6 +896,39 @@ class CashFlowService:
 
         period_label = start_label if start_label == end_label else f"{start_label}_to_{end_label}"
         return period_label, start_date, end_exclusive
+
+    @staticmethod
+    def _normalize_system_invoice(
+        system_invoice_type: str | None,
+        system_invoice_data: str | None,
+    ) -> tuple[str | None, str | None]:
+        if system_invoice_type is None and system_invoice_data is None:
+            return None, None
+        if not system_invoice_type or not system_invoice_data:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="System invoice type and data are required together",
+            )
+
+        normalized_type = system_invoice_type.strip().lower()
+        if normalized_type not in {"cleaner", "contractor"}:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid system invoice type",
+            )
+        try:
+            parsed_data = json.loads(system_invoice_data)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid system invoice data",
+            ) from exc
+        if not isinstance(parsed_data, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="System invoice data must be an object",
+            )
+        return normalized_type, json.dumps(parsed_data, separators=(",", ":"))
 
     @staticmethod
     def _clean_optional_text(value: str | None) -> str | None:

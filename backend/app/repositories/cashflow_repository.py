@@ -70,6 +70,14 @@ class CashFlowRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def list_all_records(self, cashflow_scope: str) -> list[CashFlowRecord]:
+        statement: Select[tuple[CashFlowRecord]] = (
+            select(CashFlowRecord)
+            .where(CashFlowRecord.cashflow_scope == cashflow_scope)
+            .order_by(CashFlowRecord.record_date.asc(), CashFlowRecord.id.asc())
+        )
+        return list(self.db.scalars(statement).all())
+
     def get_balance_before(self, month_start: date, cashflow_scope: str) -> Decimal:
         statement = (
             select(func.coalesce(func.sum(CashFlowRecord.amount), 0))

@@ -44,6 +44,8 @@ class CashFlowRecord(Base):
     invoice_media_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     invoice_media_mime: Mapped[str | None] = mapped_column(String(120), nullable=True)
     invoice_media_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    system_invoice_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    system_invoice_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     record_date: Mapped[date] = mapped_column(Date, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)

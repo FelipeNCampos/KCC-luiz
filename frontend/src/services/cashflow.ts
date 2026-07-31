@@ -1,6 +1,8 @@
 import { api } from "./api";
 
 export type CashFlowScope = "main" | "cashflow52";
+export type SystemInvoiceType = "cleaner" | "contractor";
+export type SystemInvoiceData = Record<string, unknown>;
 
 export type CashFlowRow = {
   id: number;
@@ -8,6 +10,7 @@ export type CashFlowRow = {
   has_invoice: boolean;
   invoice_number: string | null;
   invoice_media_name: string | null;
+  system_invoice_type: SystemInvoiceType | null;
   record_date: string;
   amount: string;
   description: string | null;
@@ -39,14 +42,29 @@ export type CreateCashFlowPayload = {
   supplier?: string;
   flat?: string;
   invoiceMedia?: File | null;
+  systemInvoiceType?: SystemInvoiceType;
+  systemInvoiceData?: SystemInvoiceData;
 };
 
 export type UpdateCashFlowPayload = {
+  recordDate?: string | null;
   scope?: CashFlowScope;
   value?: string | null;
   description?: string | null;
   supplier?: string | null;
   flat?: string | null;
+};
+
+export type UpdateSystemInvoicePayload = {
+  invoiceNumber: string;
+  date: string;
+  value: string;
+  description?: string;
+  supplier?: string;
+  flat?: string;
+  invoiceMedia: File;
+  systemInvoiceType: SystemInvoiceType;
+  systemInvoiceData: SystemInvoiceData;
 };
 
 export type CashFlowReportPayload = {
@@ -94,12 +112,13 @@ export type CashFlowPublicShare = {
 };
 
 export const cashFlowService = {
-  async list(params: { month: string; search?: string; scope?: CashFlowScope }) {
+  async list(params: { month: string; search?: string; scope?: CashFlowScope; all?: boolean }) {
     const { data } = await api.get<CashFlowListResponse>("/cashflow", {
       params: {
         month: params.month,
         search: params.search || undefined,
-        scope: params.scope || undefined
+        scope: params.scope || undefined,
+        all: params.all || undefined
       }
     });
     return data;
@@ -138,6 +157,10 @@ export const cashFlowService = {
     if (payload.invoice === "Yes" && payload.invoiceMedia) {
       formData.append("invoice_media", payload.invoiceMedia);
     }
+    if (payload.systemInvoiceType && payload.systemInvoiceData) {
+      formData.append("system_invoice_type", payload.systemInvoiceType);
+      formData.append("system_invoice_data", JSON.stringify(payload.systemInvoiceData));
+    }
 
     const { data } = await api.post<CashFlowRow>("/cashflow", formData, {
       headers: { "Content-Type": "multipart/form-data" }
@@ -150,7 +173,11 @@ export const cashFlowService = {
   },
 
   async update(recordId: number, payload: UpdateCashFlowPayload) {
-    const { data } = await api.patch<CashFlowRow>(`/cashflow/${recordId}`, payload);
+    const { recordDate, ...recordPayload } = payload;
+    const { data } = await api.patch<CashFlowRow>(`/cashflow/${recordId}`, {
+      ...recordPayload,
+      ...(recordDate !== undefined ? { record_date: recordDate } : {})
+    });
     return data;
   },
 
@@ -194,6 +221,39 @@ export const cashFlowService = {
 
   async createShareLink(payload: { scope: CashFlowScope; date_from: string; date_to: string; expires_at: string }) {
     const { data } = await api.post<CashFlowShareLink>("/cashflow/share-links", payload);
+    return data;
+  },
+
+  async getSystemInvoice(recordId: number) {
+    const { data } = await api.get<{
+      system_invoice_type: SystemInvoiceType;
+      system_invoice_data: SystemInvoiceData;
+    }>(`/cashflow/${recordId}/system-invoice`);
+    return data;
+  },
+
+  async updateSystemInvoice(recordId: number, payload: UpdateSystemInvoicePayload) {
+    const formData = new FormData();
+    formData.append("invoice_number", payload.invoiceNumber);
+    formData.append("date", payload.date);
+    formData.append("value", payload.value);
+    formData.append("system_invoice_type", payload.systemInvoiceType);
+    formData.append("system_invoice_data", JSON.stringify(payload.systemInvoiceData));
+    formData.append("invoice_media", payload.invoiceMedia);
+
+    if (payload.description?.trim()) {
+      formData.append("description", payload.description);
+    }
+    if (payload.supplier?.trim()) {
+      formData.append("supplier", payload.supplier);
+    }
+    if (payload.flat?.trim()) {
+      formData.append("flat", payload.flat);
+    }
+
+    const { data } = await api.patch<CashFlowRow>(`/cashflow/${recordId}/system-invoice`, formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
     return data;
   },
 

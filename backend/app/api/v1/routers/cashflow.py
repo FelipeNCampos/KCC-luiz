@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from typing import Annotated
 
@@ -31,6 +32,7 @@ from app.schemas.cashflow import (
     CashFlowShareLinkCreate,
     CashFlowShareLinkListResponse,
     CashFlowShareLinkRead,
+    CashFlowSystemInvoice,
     CashFlowUpdate,
 )
 from app.services.cashflow_service import CashFlowService
@@ -81,9 +83,15 @@ def list_cashflow_records(
         str | None, Query(description="Search by description, supplier, flat or amount")
     ] = None,
     scope: Annotated[str | None, Query(description="Cashflow scope")] = None,
+    include_all: Annotated[bool, Query(alias="all", description="Include all records")] = False,
 ) -> CashFlowListResponse:
     service = CashFlowService(CashFlowRepository(db))
-    return service.list_month(month=month, search=search, scope=scope)
+    return service.list_month(
+        month=month,
+        search=search,
+        scope=scope,
+        include_all=include_all,
+    )
 
 
 @router.get("/next-payment-number", response_model=CashFlowNextPaymentNumberResponse)
@@ -108,6 +116,8 @@ async def create_cashflow_record(
     scope: Annotated[str | None, Form(alias="scope")] = None,
     invoice_number: Annotated[str | None, Form(alias="invoice_number")] = None,
     invoice_media: Annotated[UploadFile | None, File(alias="invoice_media")] = None,
+    system_invoice_type: Annotated[str | None, Form(alias="system_invoice_type")] = None,
+    system_invoice_data: Annotated[str | None, Form(alias="system_invoice_data")] = None,
 ) -> CashFlowRow:
     has_invoice = _parse_invoice_flag(invoice)
     if value == 0:
@@ -149,6 +159,8 @@ async def create_cashflow_record(
         invoice_media_name=invoice_name,
         invoice_media_mime=invoice_mime,
         invoice_media_data=invoice_bytes,
+        system_invoice_type=system_invoice_type,
+        system_invoice_data=system_invoice_data,
     )
 
     return service.row_for_record(created)
@@ -163,6 +175,69 @@ def update_cashflow_record(
 ) -> CashFlowRow:
     service = CashFlowService(CashFlowRepository(db))
     updated = service.update_record(record_id, payload)
+    return service.row_for_record(updated)
+
+
+@router.get("/{record_id}/system-invoice", response_model=CashFlowSystemInvoice)
+def get_system_cashflow_invoice(
+    record_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles("admin", "manager"))],
+) -> CashFlowSystemInvoice:
+    return CashFlowService(CashFlowRepository(db)).get_system_invoice(record_id)
+
+
+@router.patch("/{record_id}/system-invoice", response_model=CashFlowRow)
+async def update_system_cashflow_invoice(
+    record_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles("admin", "manager"))],
+    invoice_number: Annotated[str, Form(alias="invoice_number")],
+    record_date: Annotated[date, Form(alias="date")],
+    value: Annotated[Decimal, Form(alias="value")],
+    system_invoice_type: Annotated[str, Form(alias="system_invoice_type")],
+    system_invoice_data: Annotated[str, Form(alias="system_invoice_data")],
+    invoice_media: Annotated[UploadFile, File(alias="invoice_media")],
+    description: Annotated[str | None, Form(alias="description")] = None,
+    supplier: Annotated[str | None, Form(alias="supplier")] = None,
+    flat: Annotated[str | None, Form(alias="flat")] = None,
+) -> CashFlowRow:
+    if value == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Value must be different from zero",
+        )
+
+    _validate_invoice_media(invoice_media)
+    invoice_bytes = await invoice_media.read()
+    if not invoice_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invoice media is required",
+        )
+    if len(invoice_bytes) > MAX_INVOICE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Invoice media is too large",
+        )
+
+    service = CashFlowService(CashFlowRepository(db))
+    updated = service.update_system_invoice(
+        record_id=record_id,
+        payload=CashFlowUpdate(
+            value=value,
+            description=description,
+            supplier=supplier,
+            flat=flat,
+        ),
+        record_date=record_date,
+        invoice_number=invoice_number,
+        invoice_media_name=invoice_media.filename or "invoice",
+        invoice_media_mime=invoice_media.content_type,
+        invoice_media_data=invoice_bytes,
+        system_invoice_type=system_invoice_type,
+        system_invoice_data=system_invoice_data,
+    )
     return service.row_for_record(updated)
 
 

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -23,6 +24,7 @@ class CashFlowCreate(BaseModel):
 
 
 class CashFlowUpdate(BaseModel):
+    record_date: date | None = None
     value: Decimal | None = None
     scope: str | None = None
     description: str | None = Field(default=None, max_length=255)
@@ -45,6 +47,7 @@ class CashFlowRow(BaseModel):
     has_invoice: bool
     invoice_number: str | None
     invoice_media_name: str | None
+    system_invoice_type: Literal["cleaner", "contractor"] | None
     record_date: date
     amount: Decimal
     description: str | None
@@ -53,6 +56,11 @@ class CashFlowRow(BaseModel):
     balance: Decimal
     created_by_user_id: int
     created_at: datetime
+
+
+class CashFlowSystemInvoice(BaseModel):
+    system_invoice_type: Literal["cleaner", "contractor"]
+    system_invoice_data: dict[str, Any]
 
 
 class CashFlowListResponse(BaseModel):

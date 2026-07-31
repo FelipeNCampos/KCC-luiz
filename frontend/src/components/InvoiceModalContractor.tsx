@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, Plus, Trash2, Upload, X } from "lucide-react";
 
-import { type CashFlowScope, cashFlowService } from "../services/cashflow";
+import { type CashFlowScope, type SystemInvoiceData, cashFlowService } from "../services/cashflow";
 import { renderPdfFirstPageToDataUrl } from "../utils/pdfPreview";
 
 type InvoiceModalProps = {
@@ -10,6 +10,10 @@ type InvoiceModalProps = {
   defaultDescription: string;
   onClose: () => void;
   onCreated?: (message: string) => void;
+  editingRecordId?: number;
+  editingScope?: CashFlowScope;
+  editingDraft?: SystemInvoiceData;
+  onUpdated?: (message: string) => void;
 };
 
 type InvoicePricingMode = "per_item" | "invoice_total";
@@ -33,7 +37,7 @@ type PreparedInvoiceItem = {
 
 type InvoiceDocumentData = {
   invoiceNumber: string;
-  accountName: string;
+  title: string;
   pricingMode: InvoicePricingMode;
   issuedDate: string;
   dueDate: string;
@@ -138,9 +142,41 @@ function newInvoiceItem(date = toDateInputValue(new Date()), description = ""): 
   };
 }
 
+function draftString(draft: SystemInvoiceData | undefined, key: string, fallback = "") {
+  const value = draft?.[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function draftFlats(draft: SystemInvoiceData | undefined) {
+  const values = draft?.flat;
+  return Array.isArray(values) ? values.filter((value): value is string => typeof value === "string") : [];
+}
+
+function draftItems(
+  draft: SystemInvoiceData | undefined,
+  fallbackDate: string,
+  defaultDescription: string,
+): InvoiceItem[] {
+  const values = draft?.items;
+  if (!Array.isArray(values)) return [newInvoiceItem(fallbackDate, defaultDescription)];
+
+  const items = values.flatMap((value, index) => {
+    if (!value || typeof value !== "object") return [];
+    const item = value as Record<string, unknown>;
+    return [{
+      id: typeof item.id === "string" ? item.id : `item-${index}`,
+      date: typeof item.date === "string" ? item.date : fallbackDate,
+      description: typeof item.description === "string" ? item.description : "",
+      total: typeof item.total === "string" ? item.total : "",
+    }];
+  });
+  return items.length ? items : [newInvoiceItem(fallbackDate, defaultDescription)];
+}
+
 function buildInvoiceDocumentData(params: {
   invoiceDate: string;
   invoiceNumber: string;
+  title: string;
   to: string;
   flat: string[];
   items: InvoiceItem[];
@@ -179,7 +215,7 @@ function buildInvoiceDocumentData(params: {
 
   return {
     invoiceNumber: params.invoiceNumber.trim() || "Inv-0000",
-    accountName: params.bankAccountName.trim() || "-",
+    title: params.title.trim(),
     pricingMode: params.pricingMode,
     issuedDate: formattedDate,
     dueDate: formattedDate,
@@ -200,14 +236,14 @@ function buildPreviewHtml(params: {
 }) {
   const { documentData, mediaPreviewUrl, mediaPreviewKind, mediaFileName } = params;
   const showItemAmounts = documentData.pricingMode === "per_item";
-  const accountNameMissing = documentData.accountName === "-";
+  const titleMarkup = documentData.title ? `<div class="invoice-title">${escapeHtml(documentData.title)}</div>` : "";
 
   const tableRows = documentData.items
     .map(
       (item) => `
         <tr>
           <td>${escapeHtml(item.dateLabel)}</td>
-          <td class="${showItemAmounts ? "" : "desc-center"}">${item.description ? escapeHtml(item.description) : "&nbsp;"}</td>
+          <td>${item.description ? escapeHtml(item.description) : "&nbsp;"}</td>
           ${showItemAmounts ? `<td class="num">${escapeHtml(item.amountLabel)}</td>` : ""}
         </tr>
       `
@@ -236,7 +272,7 @@ function buildPreviewHtml(params: {
     : `
         <tr>
           <th>Date</th>
-          <th class="desc-center">Description</th>
+          <th>Description</th>
         </tr>
       `;
 
@@ -334,11 +370,6 @@ function buildPreviewHtml(params: {
       align-items: start;
       padding: 15px 18px;
     }
-    .meta-row-account {
-      display: block;
-      text-align: right;
-      background: #eef4fa;
-    }
     .meta-inline-label {
       font-size: 9px;
       font-weight: 700;
@@ -358,11 +389,16 @@ function buildPreviewHtml(params: {
       font-size: 10px;
       text-align: center;
     }
-    .meta-inline-value-center {
-      text-align: center;
-    }
-    .meta-inline-value-full {
-      display: block;
+    .invoice-title {
+      margin-top: 22px;
+      width: 80%;
+      margin-left: 20%;
+      padding-left: 10px;
+      color: var(--text);
+      font-size: 10.67px;
+      font-weight: 700;
+      line-height: 1.4;
+      text-align: left;
     }
     table {
       width: 100%;
@@ -370,6 +406,9 @@ function buildPreviewHtml(params: {
       table-layout: fixed;
       font-size: 13px;
       margin-top: 22px;
+    }
+    .invoice-title + table {
+      margin-top: 10px;
     }
     thead th {
       background: var(--accent);
@@ -394,9 +433,6 @@ function buildPreviewHtml(params: {
     .num {
       text-align: right;
       white-space: nowrap;
-    }
-    .desc-center {
-      text-align: center;
     }
     .total-due {
       width: 100%;
@@ -520,9 +556,6 @@ function buildPreviewHtml(params: {
         <div class="meta-row" style="display:block;text-align:center;">
           <span class="meta-inline-value meta-inline-value-invoice">${escapeHtml(documentData.invoiceNumber)}</span>
         </div>
-        <div class="meta-row meta-row-account">
-          <span class="meta-inline-value meta-inline-value-full ${accountNameMissing ? "meta-inline-value-center" : ""}">${escapeHtml(documentData.accountName)}</span>
-        </div>
         <div class="meta-row">
           <span class="meta-inline-label">Date :</span>
           <span class="meta-inline-value">${escapeHtml(documentData.issuedDate)}</span>
@@ -538,6 +571,7 @@ function buildPreviewHtml(params: {
       </div>
     </div>
 
+    ${titleMarkup}
     <table>
       <colgroup>
         ${tableColumns}
@@ -570,7 +604,17 @@ function buildPreviewHtml(params: {
 </html>`;
 }
 
-export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, onClose, onCreated }: InvoiceModalProps) {
+export function InvoiceModalContractor({
+  open,
+  sourceLabel,
+  defaultDescription,
+  onClose,
+  onCreated,
+  editingRecordId,
+  editingScope,
+  editingDraft,
+  onUpdated,
+}: InvoiceModalProps) {
   const [invoiceDate, setInvoiceDate] = useState(() => toDateInputValue(new Date()));
   const [to, setTo] = useState("");
   const [flat, setFlat] = useState<string[]>([]);
@@ -583,6 +627,7 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
   const [mediaPreviewKind, setMediaPreviewKind] = useState<MediaKind>("file");
   const [invoiceNumber, setInvoiceNumber] = useState("Inv-0001");
+  const [title, setTitle] = useState("");
   const [pricingMode, setPricingMode] = useState<InvoicePricingMode>("per_item");
   const [invoiceTotalInput, setInvoiceTotalInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -607,23 +652,31 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
 
     window.addEventListener("keydown", handleKeyDown);
 
-    const nextDate = toDateInputValue(new Date());
+    const nextDate = draftString(editingDraft, "invoiceDate", toDateInputValue(new Date()));
     setInvoiceDate(nextDate);
-    setTo("");
-    setFlat([]);
-    setItems([newInvoiceItem(nextDate, defaultDescription)]);
-    setBankAccountName("");
-    setBankSortCode("");
-    setBankAccountNumber("");
-    setBankReference("");
+    setTo(draftString(editingDraft, "to"));
+    setFlat(draftFlats(editingDraft));
+    setItems(draftItems(editingDraft, nextDate, defaultDescription));
+    setBankAccountName(draftString(editingDraft, "bankAccountName"));
+    setBankSortCode(draftString(editingDraft, "bankSortCode"));
+    setBankAccountNumber(draftString(editingDraft, "bankAccountNumber"));
+    setBankReference(draftString(editingDraft, "bankReference"));
     setMediaFile(null);
     setMediaPreviewUrl(null);
     setMediaPreviewKind("file");
-    setInvoiceNumber("Inv-0001");
-    setPricingMode("per_item");
-    setInvoiceTotalInput("");
+    setInvoiceNumber(draftString(editingDraft, "invoiceNumber", "Inv-0001"));
+    setTitle(draftString(editingDraft, "title"));
+    setPricingMode(draftString(editingDraft, "pricingMode", "per_item") === "invoice_total" ? "invoice_total" : "per_item");
+    setInvoiceTotalInput(draftString(editingDraft, "invoiceTotalInput"));
     setError(null);
     setSaving(false);
+
+    if (editingRecordId !== undefined) {
+      return () => {
+        cancelled = true;
+        window.removeEventListener("keydown", handleKeyDown);
+      };
+    }
 
     void cashFlowService
       .getNextPaymentNumber()
@@ -640,7 +693,7 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
       cancelled = true;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [defaultDescription, onClose, open]);
+  }, [defaultDescription, editingDraft, editingRecordId, onClose, open]);
 
   const totalValue = useMemo(
     () => (pricingMode === "per_item" ? items.reduce((sum, item) => sum + getItemTotal(item), 0) : normalizeNumber(invoiceTotalInput)),
@@ -652,6 +705,7 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
       buildInvoiceDocumentData({
         invoiceDate,
         invoiceNumber,
+        title,
         to,
         flat,
         items,
@@ -662,7 +716,7 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
         bankAccountNumber,
         bankReference,
       }),
-    [bankAccountName, bankAccountNumber, bankReference, bankSortCode, flat, invoiceDate, invoiceNumber, items, pricingMode, to, totalValue]
+    [bankAccountName, bankAccountNumber, bankReference, bankSortCode, flat, invoiceDate, invoiceNumber, items, pricingMode, title, to, totalValue]
   );
 
   const previewHtml = useMemo(
@@ -744,7 +798,6 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
 
     const metaRows = [
       { label: "", value: documentData.invoiceNumber, valueOnly: true, centered: true, invoiceNumber: true },
-      { label: "", value: documentData.accountName, valueOnly: true, centered: documentData.accountName === "-", invoiceNumber: false },
       { label: "Date :", value: documentData.issuedDate, valueOnly: false, centered: false, invoiceNumber: false },
       { label: "Terms :", value: documentData.terms, valueOnly: false, centered: false, invoiceNumber: false },
       { label: "Due date :", value: documentData.dueDate, valueOnly: false, centered: false, invoiceNumber: false },
@@ -807,6 +860,14 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
     const headerHeight = 32;
     const rowLineHeight = 13;
 
+    if (documentData.title) {
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8.67);
+      pdf.setTextColor(15, 23, 32);
+      pdf.text(documentData.title, margin + columnWidths[0] + 8, y + 14, { align: "left" });
+      y += 26;
+    }
+
     function drawTableHeader(top: number) {
       let x = margin;
 
@@ -818,9 +879,8 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
 
       tableHeaders.forEach((header, index) => {
         const isNumeric = showItemAmounts && index === 2;
-        const isCenteredDescription = !showItemAmounts && index === 1;
-        pdf.text(header, isNumeric ? x + columnWidths[index] - 8 : isCenteredDescription ? x + columnWidths[index] / 2 : x + 8, top + 20, {
-          align: isNumeric ? "right" : isCenteredDescription ? "center" : "left",
+        pdf.text(header, isNumeric ? x + columnWidths[index] - 8 : x + 8, top + 20, {
+          align: isNumeric ? "right" : "left",
         });
         x += columnWidths[index];
       });
@@ -856,11 +916,7 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
       pdf.text(String(item.dateLabel), x + 8, y + 18);
       x += columnWidths[0];
 
-      if (showItemAmounts) {
-        pdf.text(descriptionLines, x + 8, y + 18);
-      } else {
-        pdf.text(descriptionLines, x + columnWidths[1] / 2, y + 18, { align: "center" });
-      }
+      pdf.text(descriptionLines, x + 8, y + 18, { align: "left" });
       x += columnWidths[1];
 
       if (showItemAmounts) {
@@ -1027,18 +1083,48 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
     try {
       const cashflowValue = (-Math.abs(totalValue)).toFixed(2);
       const invoicePdf = await buildInvoicePdf();
-      const created = await cashFlowService.create({
-        scope,
-        invoice: "Yes",
-        date: invoiceDate,
-        value: cashflowValue,
-        description: normalizedItems.map((item) => item.description).join("; "),
-        flat: flat.length ? flat.join(", ") : undefined,
-        invoiceMedia: invoicePdf.file,
-      });
-
       const cashflowName = scope === "main" ? "Cashflow penthouse" : "Cashflow 52";
-      onCreated?.(`Invoice ${normalizedInvoiceNumber} sent to ${cashflowName} successfully. Cashflow record #${created.payment_number}.`);
+      const systemInvoiceData = {
+        invoiceDate,
+        invoiceNumber: normalizedInvoiceNumber,
+        title,
+        to,
+        flat,
+        items,
+        bankAccountName,
+        bankSortCode,
+        bankAccountNumber,
+        bankReference,
+        pricingMode,
+        invoiceTotalInput,
+      };
+      if (editingRecordId !== undefined) {
+        await cashFlowService.updateSystemInvoice(editingRecordId, {
+          invoiceNumber: normalizedInvoiceNumber,
+          date: invoiceDate,
+          value: cashflowValue,
+          description: normalizedItems.map((item) => item.description).join("; "),
+          flat: flat.length ? flat.join(", ") : undefined,
+          invoiceMedia: invoicePdf.file,
+          systemInvoiceType: "contractor",
+          systemInvoiceData,
+        });
+        onUpdated?.(`Invoice ${normalizedInvoiceNumber} updated in ${cashflowName} successfully.`);
+      } else {
+        const created = await cashFlowService.create({
+          scope,
+          invoice: "Yes",
+          invoiceNumber: normalizedInvoiceNumber,
+          date: invoiceDate,
+          value: cashflowValue,
+          description: normalizedItems.map((item) => item.description).join("; "),
+          flat: flat.length ? flat.join(", ") : undefined,
+          invoiceMedia: invoicePdf.file,
+          systemInvoiceType: "contractor",
+          systemInvoiceData,
+        });
+        onCreated?.(`Invoice ${normalizedInvoiceNumber} sent to ${cashflowName} successfully. Cashflow record #${created.payment_number}.`);
+      }
       onClose();
     } catch (requestError) {
       const message = (requestError as { response?: { data?: { detail?: string } } }).response?.data?.detail;
@@ -1091,6 +1177,15 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
                       />
                     </label>
                   </div>
+
+                  <label className="grid gap-1.5">
+                    <span className="oak-label">Title</span>
+                    <input
+                      className="oak-input !min-h-10 !px-3 !py-2"
+                      value={title}
+                      onChange={(event) => setTitle(event.target.value)}
+                    />
+                  </label>
 
                   <label className="grid gap-1.5">
                     <span className="oak-label">Invoice to</span>
@@ -1296,6 +1391,27 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
                   <div className="rounded-xl border border-oak-danger/30 bg-oak-dangerBg p-3 text-sm font-bold text-oak-danger">{error}</div>
                 ) : null}
 
+                {editingRecordId !== undefined ? (
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3">
+                    <button
+                      aria-label="Download invoice"
+                      className="oak-button-secondary grid !size-10 !min-h-10 !p-0"
+                      title="Download invoice"
+                      type="button"
+                      onClick={() => void handleDownload()}
+                    >
+                      <Download size={16} />
+                    </button>
+                    <button
+                      className="oak-button-primary !min-h-10 !py-2"
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void handleLaunchToCashflow(editingScope ?? "main")}
+                    >
+                      {saving ? "Saving..." : "Save invoice changes"}
+                    </button>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-3">
                   <button
                     aria-label="Download invoice"
@@ -1323,6 +1439,7 @@ export function InvoiceModalContractor({ open, sourceLabel, defaultDescription, 
                     {saving ? "Sending..." : "52"}
                   </button>
                 </div>
+                )}
               </div>
             </div>
           </form>
