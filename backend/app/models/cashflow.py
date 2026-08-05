@@ -48,7 +48,7 @@ class CashFlowRecord(Base):
     system_invoice_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     record_date: Mapped[date] = mapped_column(Date, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     supplier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     flat: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_by_user_id: Mapped[int] = mapped_column(

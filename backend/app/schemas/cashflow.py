@@ -11,7 +11,7 @@ class CashFlowCreate(BaseModel):
     scope: str | None = None
     record_date: date
     value: Decimal
-    description: str | None = Field(default=None, max_length=255)
+    description: str | None = None
     supplier: str | None = Field(default=None, max_length=255)
     flat: str | None = Field(default=None, max_length=120)
 
@@ -27,7 +27,7 @@ class CashFlowUpdate(BaseModel):
     record_date: date | None = None
     value: Decimal | None = None
     scope: str | None = None
-    description: str | None = Field(default=None, max_length=255)
+    description: str | None = None
     supplier: str | None = Field(default=None, max_length=255)
     flat: str | None = Field(default=None, max_length=120)
 

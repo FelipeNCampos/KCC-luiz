@@ -798,6 +798,48 @@ def test_system_invoice_can_be_retrieved_and_updated_without_recreating_cashflow
     assert saved_draft == edited_draft
 
 
+def test_contractor_invoice_with_many_item_descriptions_is_created(
+    client: TestClient,
+) -> None:
+    admin_token = get_admin_token(client, email="contractor-invoice@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    descriptions = [
+        "Flats 50-51-52 once a week for two months from 1/5/26 until 11/07/26",
+        "Reading gas and electricity",
+        "Water flush 12 toilets",
+        "Wash machine three times, one cycle each",
+        "Dryer three times, one cycle each",
+        "Running water Flat 50, six taps",
+        "Running water Flat 51, four taps",
+        "Running water Flat 52, seven taps",
+    ]
+    description = "; ".join(descriptions)
+    assert len(description) > 255
+
+    response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "Yes",
+            "invoice_number": "Inv-0168",
+            "date": "2026-07-14",
+            "value": "-200.00",
+            "description": description,
+            "system_invoice_type": "contractor",
+            "system_invoice_data": json.dumps(
+                {
+                    "invoiceNumber": "Inv-0168",
+                    "items": [{"description": item} for item in descriptions],
+                }
+            ),
+        },
+        files={"invoice_media": ("invoice.pdf", make_invoice_pdf("Contractor"), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["description"] == description
+
+
 def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> None:
     admin_token = get_admin_token(client, email="update-admin@example.com")
     headers = {"Authorization": f"Bearer {admin_token}"}
