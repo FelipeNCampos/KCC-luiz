@@ -79,6 +79,8 @@ def list_cashflow_records(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_roles("admin", "manager"))],
     month: Annotated[str | None, Query(description="Month in format YYYY-MM")] = None,
+    date_from: Annotated[date | None, Query(description="Custom period start date")] = None,
+    date_to: Annotated[date | None, Query(description="Custom period end date")] = None,
     search: Annotated[
         str | None, Query(description="Search by description, supplier, flat or amount")
     ] = None,
@@ -88,6 +90,8 @@ def list_cashflow_records(
     service = CashFlowService(CashFlowRepository(db))
     return service.list_month(
         month=month,
+        date_from=date_from,
+        date_to=date_to,
         search=search,
         scope=scope,
         include_all=include_all,

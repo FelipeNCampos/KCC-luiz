@@ -123,6 +123,82 @@ describe("CashFlowPage records", () => {
     expect(screen.getByPlaceholderText("Search by Description, Supplier, Flat or Amount")).toBeTruthy();
   });
 
+  it("filters both cashflows by a custom date period and labels the month as Customized", async () => {
+    const applyCustomPeriod = async (scope: "main" | "cashflow52") => {
+      fireEvent.click(screen.getByRole("button", { name: "Customize period" }));
+      await screen.findByRole("heading", { name: "Customize cashflow period" });
+      fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-04-10" } });
+      fireEvent.change(screen.getByLabelText("End date"), { target: { value: "2026-04-20" } });
+      fireEvent.click(screen.getByRole("button", { name: "Apply period" }));
+
+      await waitFor(() =>
+        expect(cashFlowService.list).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            dateFrom: "2026-04-10",
+            dateTo: "2026-04-20",
+            scope,
+            all: false
+          })
+        )
+      );
+      expect((screen.getByLabelText("Month") as HTMLInputElement).value).toBe("Customized");
+    };
+
+    const main = render(<CashFlowPage />);
+    await applyCustomPeriod("main");
+    main.unmount();
+
+    render(<CashFlowPage scope="cashflow52" showFlat={false} />);
+    await applyCustomPeriod("cashflow52");
+  });
+
+  it("returns a customized period to the existing single-month picker when Month is clicked", async () => {
+    const showPicker = vi.fn();
+    const requestAnimationFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 0);
+    Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+      configurable: true,
+      value: showPicker
+    });
+
+    render(<CashFlowPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Customize period" }));
+    await screen.findByRole("heading", { name: "Customize cashflow period" });
+    fireEvent.click(screen.getByRole("button", { name: "Apply period" }));
+
+    const monthInput = screen.getByLabelText("Month") as HTMLInputElement;
+    expect(monthInput.value).toBe("Customized");
+    fireEvent.click(monthInput);
+
+    await waitFor(() => expect((screen.getByLabelText("Month") as HTMLInputElement).type).toBe("month"));
+    expect(requestAnimationFrame).not.toHaveBeenCalled();
+    expect(showPicker).toHaveBeenCalled();
+  });
+
+  it("shows the amount total beside the balance total in both cashflows", async () => {
+    vi.mocked(cashFlowService.list).mockResolvedValue({
+      month: "2026-04",
+      monthly_total: "-125.50",
+      current_balance: "75.00",
+      items: []
+    } as never);
+
+    const { rerender } = render(<CashFlowPage />);
+
+    await screen.findByText("No records for this month.");
+    let totalLabels = screen.getAllByText("Total:");
+    expect(totalLabels).toHaveLength(2);
+    expect(totalLabels[0].className).not.toContain("uppercase");
+    expect(totalLabels[0].nextElementSibling?.textContent).toBe("-£125.50");
+    expect(totalLabels[1].nextElementSibling?.textContent).toBe("£75.00");
+
+    rerender(<CashFlowPage showFlat={false} />);
+
+    totalLabels = await screen.findAllByText("Total:");
+    expect(totalLabels).toHaveLength(2);
+    expect(totalLabels[0].nextElementSibling?.textContent).toBe("-£125.50");
+    expect(totalLabels[1].nextElementSibling?.textContent).toBe("£75.00");
+  });
+
   it("searches all records when All is selected", async () => {
     render(<CashFlowPage />);
 
@@ -232,6 +308,48 @@ describe("CashFlowPage records", () => {
 
     expect(await screen.findByText("Editing system invoice 42")).toBeTruthy();
     expect(cashFlowService.getSystemInvoice).toHaveBeenCalledWith(42);
+  });
+
+  it("hides the raw value and excludes it from edits to a system invoice record", async () => {
+    vi.mocked(cashFlowService.list).mockResolvedValue({
+      month: "2026-04",
+      monthly_total: "-75.00",
+      current_balance: "-75.00",
+      items: [{
+        id: 42,
+        payment_number: 1,
+        has_invoice: true,
+        invoice_number: "Inv-0042",
+        invoice_media_name: "invoice.pdf",
+        system_invoice_type: "cleaner",
+        record_date: "2026-04-12",
+        amount: "-75.00",
+        description: "Cleaning",
+        supplier: null,
+        flat: "Flat 52",
+        balance: "-75.00",
+        created_by_user_id: 1,
+        created_at: "2026-04-12T12:00:00Z"
+      }]
+    } as never);
+
+    render(<CashFlowPage />);
+
+    fireEvent.click((await screen.findByText("Cleaning")).closest("tr")!);
+    await screen.findByRole("heading", { name: "Edit record" });
+    expect(screen.queryByLabelText("Value")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Comments"), { target: { value: "Corrected cleaning" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(cashFlowService.update).toHaveBeenCalledWith(42, {
+        recordDate: "2026-04-12",
+        description: "Corrected cleaning",
+        supplier: null,
+        flat: "Flat 52"
+      })
+    );
   });
 
   it("opens the Contractor editor from the media pencil", async () => {

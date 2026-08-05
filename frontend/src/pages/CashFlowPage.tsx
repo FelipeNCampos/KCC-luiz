@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AxiosError } from "axios";
 import { CircleDollarSign, Download, FileSpreadsheet, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 
@@ -57,6 +57,11 @@ type ReportFormState = {
   includeInvoiceTable: boolean;
 };
 
+type CustomPeriod = {
+  dateFrom: string;
+  dateTo: string;
+};
+
 type CashFlowPageProps = {
   title?: string;
   scope?: CashFlowScope;
@@ -71,6 +76,15 @@ function toMonthInputValue(date: Date) {
 
 function toDateInputValue(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthDateRange(month: string): CustomPeriod {
+  const [year, monthValue] = month.split("-").map(Number);
+  const endDate = new Date(year, monthValue, 0);
+  return {
+    dateFrom: `${month}-01`,
+    dateTo: toDateInputValue(endDate)
+  };
 }
 
 function formatDate(value: string) {
@@ -114,6 +128,10 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
   const recordRowRefs = useRef(new Map<number, HTMLTableRowElement>());
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
+  const [customPeriod, setCustomPeriod] = useState<CustomPeriod | null>(null);
+  const [customPeriodForm, setCustomPeriodForm] = useState<CustomPeriod>(() => monthDateRange(toMonthInputValue(new Date())));
+  const [isCustomPeriodOpen, setIsCustomPeriodOpen] = useState(false);
+  const [customPeriodError, setCustomPeriodError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [allRecords, setAllRecords] = useState(false);
   const [highlightedRecordId, setHighlightedRecordId] = useState<number | null>(null);
@@ -144,9 +162,19 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [systemInvoiceEditor, setSystemInvoiceEditor] = useState<SystemInvoiceEditorState | null>(null);
   const tableColumnCount = showFlat ? 8 : 7;
   const tableMinWidthClass = showFlat ? "min-w-[1000px]" : "min-w-[860px]";
-  const summaryLeadingColumnSpan = showFlat ? 6 : 5;
+  const summaryMiddleColumnSpan = showFlat ? 2 : 1;
   const moveTargetScope: CashFlowScope = scope === "main" ? "cashflow52" : "main";
   const moveTargetTitle = scope === "main" ? "Cashflow 52" : "Cashflow penthouse";
+
+  const listParams = useCallback(() => {
+    return {
+      month,
+      search,
+      scope,
+      all: allRecords,
+      ...(customPeriod ? { dateFrom: customPeriod.dateFrom, dateTo: customPeriod.dateTo } : {})
+    };
+  }, [allRecords, customPeriod, month, scope, search]);
 
   useEffect(() => {
     let active = true;
@@ -154,7 +182,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     setError(null);
 
     cashFlowService
-      .list({ month, search, scope, all: allRecords })
+      .list(listParams())
       .then((response) => {
         if (!active) return;
         setData(response);
@@ -171,7 +199,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     return () => {
       active = false;
     };
-  }, [allRecords, month, scope, search]);
+  }, [listParams]);
 
   useEffect(() => {
     if (
@@ -195,6 +223,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       if (event.key !== "Escape") return;
       setIsCreateOpen(false);
       setIsReportOpen(false);
+      setIsCustomPeriodOpen(false);
       closeRecordEditor();
     };
 
@@ -270,6 +299,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   }, [reportPreviewUrl]);
 
   const currentBalance = useMemo(() => formatAbsoluteCurrency(data?.current_balance ?? 0), [data?.current_balance]);
+  const totalValue = formatCurrency(data?.monthly_total ?? 0);
   const thisMonthValue = useMemo(() => {
     const current = Number(data?.current_balance ?? 0);
     const monthly = Number(data?.monthly_total ?? 0);
@@ -284,7 +314,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const openingBalance = useMemo(() => formatCurrency(openingBalanceValue), [openingBalanceValue]);
 
   async function reload() {
-    const response = await cashFlowService.list({ month, search, scope, all: allRecords });
+    const response = await cashFlowService.list(listParams());
     setData(response);
   }
 
@@ -529,24 +559,28 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     event.preventDefault();
     if (!recordEditor) return;
 
+    const isSystemInvoice = recordEditor.record.system_invoice_type !== null;
     const parsedValue = Number(recordEditor.value);
-    if (!recordEditor.date || !recordEditor.value.trim() || !Number.isFinite(parsedValue)) {
+    if (!recordEditor.date || (!isSystemInvoice && (!recordEditor.value.trim() || !Number.isFinite(parsedValue)))) {
       setRecordEditor((current) => (current ? { ...current, error: "Enter a valid date and value." } : current));
       return;
     }
-    if (parsedValue === 0) {
+    if (!isSystemInvoice && parsedValue === 0) {
       setRecordEditor((current) => (current ? { ...current, error: "Value must be different from zero." } : current));
       return;
     }
 
     setSavingRecord(true);
     try {
-      await cashFlowService.update(recordEditor.record.id, {
+      const updatePayload = {
         recordDate: recordEditor.date,
-        value: recordEditor.value,
         description: recordEditor.description.trim() || null,
         supplier: recordEditor.supplier.trim() || null,
         flat: showFlat ? recordEditor.flat.trim() || null : null
+      };
+      await cashFlowService.update(recordEditor.record.id, {
+        ...updatePayload,
+        ...(isSystemInvoice ? {} : { value: recordEditor.value })
       });
       const invoiceNumber = recordEditor.invoiceNumber.trim();
       if (invoiceNumber !== (recordEditor.record.invoice_number ?? "")) {
@@ -577,6 +611,43 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     }
   }
 
+  function openCustomPeriodModal() {
+    setCustomPeriodForm(customPeriod ?? monthDateRange(month));
+    setCustomPeriodError(null);
+    setIsCustomPeriodOpen(true);
+  }
+
+  function handleApplyCustomPeriod(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!customPeriodForm.dateFrom || !customPeriodForm.dateTo) {
+      setCustomPeriodError("Select both dates for the period.");
+      return;
+    }
+    if (customPeriodForm.dateFrom > customPeriodForm.dateTo) {
+      setCustomPeriodError("Start date must be before or equal to end date.");
+      return;
+    }
+
+    setAllRecords(false);
+    setCustomPeriod(customPeriodForm);
+    setCustomPeriodError(null);
+    setIsCustomPeriodOpen(false);
+  }
+
+  function handleMonthClick() {
+    const input = monthInputRef.current;
+    if (customPeriod && input) {
+      input.type = "month";
+      input.value = month;
+      setCustomPeriod(null);
+      if (typeof input.showPicker === "function") {
+        input.showPicker();
+      }
+      return;
+    }
+    openMonthPicker();
+  }
+
   function openReportModal() {
     setReportError(null);
     setReportForm((current) => ({
@@ -600,18 +671,34 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     <DashboardShell
       title={title}
       subtitle=""
-      rightSlot={
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="grid gap-2" onClick={openMonthPicker}>
-            <span className="oak-label">Month</span>
+        rightSlot={
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2">
+              <label className="oak-label" htmlFor="cashflow-month">Month</label>
+              <button
+                aria-label="Customize period"
+                className="grid size-6 place-items-center rounded text-oak-coffee hover:bg-oak-panel"
+                type="button"
+                onClick={openCustomPeriodModal}
+              >
+                <Pencil size={15} />
+              </button>
+            </div>
             <input
+              id="cashflow-month"
               ref={monthInputRef}
               className="oak-input cursor-pointer"
-              type="month"
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
+              type={customPeriod ? "text" : "month"}
+              value={customPeriod ? "Customized" : month}
+              readOnly={Boolean(customPeriod)}
+              onClick={handleMonthClick}
+              onChange={(event) => {
+                setCustomPeriod(null);
+                setMonth(event.target.value);
+              }}
             />
-          </label>
+          </div>
           <label className="grid min-w-0 gap-2 sm:flex-1 sm:min-w-72">
             <span className="oak-label invisible">Search</span>
             <span className="relative block">
@@ -629,7 +716,10 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
               className="size-4 rounded border-oak-borderStrong"
               type="checkbox"
               checked={allRecords}
-              onChange={(event) => setAllRecords(event.target.checked)}
+              onChange={(event) => {
+                setAllRecords(event.target.checked);
+                if (event.target.checked) setCustomPeriod(null);
+              }}
             />
             All
           </label>
@@ -761,8 +851,17 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                     </tr>
                   )}
                   <tr className="bg-oak-panel/70">
-                    <td className="px-4 py-3" colSpan={summaryLeadingColumnSpan} />
-                    <td className="bg-oak-panel px-4 py-3 text-sm font-extrabold uppercase tracking-[0.08em] text-oak-coffee">
+                    <td className="px-4 py-3" colSpan={2} />
+                    <td className="bg-oak-panel px-4 py-3 text-sm font-extrabold tracking-[0.08em] text-oak-coffee">
+                      Total:
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-right text-sm font-extrabold ${Number(data.monthly_total) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
+                    >
+                      {totalValue}
+                    </td>
+                    <td className="px-4 py-3" colSpan={summaryMiddleColumnSpan} />
+                    <td className="bg-oak-panel px-4 py-3 text-sm font-extrabold tracking-[0.08em] text-oak-coffee">
                       Total:
                     </td>
                     <td
@@ -901,6 +1000,67 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 </button>
                 <button className="oak-button-primary" type="submit" disabled={saving}>
                   {saving ? "Saving..." : "Save record"}
+                </button>
+              </div>
+            </form>
+          </article>
+        </div>
+      ) : null}
+
+      {isCustomPeriodOpen ? (
+        <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 p-4">
+          <article
+            aria-labelledby="custom-period-title"
+            aria-modal="true"
+            className="w-full max-w-md rounded-2xl border border-oak-border bg-white shadow-oakLg"
+            role="dialog"
+          >
+            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
+              <div>
+                <p className="oak-label">{title}</p>
+                <h2 id="custom-period-title" className="text-lg font-extrabold text-oak-coffee">Customize cashflow period</h2>
+              </div>
+              <button
+                aria-label="Close custom period"
+                className="grid size-9 place-items-center rounded-lg border border-oak-border"
+                type="button"
+                onClick={() => setIsCustomPeriodOpen(false)}
+              >
+                <X size={17} />
+              </button>
+            </header>
+
+            <form className="grid gap-5 p-6" onSubmit={handleApplyCustomPeriod}>
+              <label className="grid gap-2">
+                <span className="oak-label">Start date</span>
+                <input
+                  className="oak-input"
+                  type="date"
+                  value={customPeriodForm.dateFrom}
+                  onChange={(event) => setCustomPeriodForm((current) => ({ ...current, dateFrom: event.target.value }))}
+                  required
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="oak-label">End date</span>
+                <input
+                  className="oak-input"
+                  type="date"
+                  value={customPeriodForm.dateTo}
+                  onChange={(event) => setCustomPeriodForm((current) => ({ ...current, dateTo: event.target.value }))}
+                  required
+                />
+              </label>
+
+              {customPeriodError ? <p className="text-sm font-bold text-oak-danger">{customPeriodError}</p> : null}
+
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button className="oak-button-secondary" type="button" onClick={() => setIsCustomPeriodOpen(false)}>
+                  Cancel
+                </button>
+                <button className="oak-button-primary" type="submit">
+                  Apply period
                 </button>
               </div>
             </form>
@@ -1050,17 +1210,19 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                     </label>
                   </div>
 
-                  <label className="grid gap-2">
-                    <span className="oak-label">Value</span>
-                    <input
-                      className="oak-input"
-                      step="0.01"
-                      type="number"
-                      value={recordEditor.value}
-                      onChange={(event) => setRecordEditor((current) => (current ? { ...current, value: event.target.value, error: null } : current))}
-                      required
-                    />
-                  </label>
+                  {recordEditor.record.system_invoice_type === null ? (
+                    <label className="grid gap-2">
+                      <span className="oak-label">Value</span>
+                      <input
+                        className="oak-input"
+                        step="0.01"
+                        type="number"
+                        value={recordEditor.value}
+                        onChange={(event) => setRecordEditor((current) => (current ? { ...current, value: event.target.value, error: null } : current))}
+                        required
+                      />
+                    </label>
+                  ) : null}
 
                   <label className="grid gap-2">
                     <span className="oak-label">Comments</span>

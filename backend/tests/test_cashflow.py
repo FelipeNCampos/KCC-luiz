@@ -498,6 +498,19 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     assert april_response.json()["monthly_total"] == "150.00"
     assert april_response.json()["current_balance"] == "150.00"
 
+    custom_period_response = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"date_from": "2026-04-15", "date_to": "2026-05-01"},
+    )
+    assert custom_period_response.status_code == 200
+    assert custom_period_response.json()["month"] == "Customized"
+    assert [item["record_date"] for item in custom_period_response.json()["items"]] == [
+        "2026-04-20"
+    ]
+    assert custom_period_response.json()["monthly_total"] == "-50.00"
+    assert custom_period_response.json()["current_balance"] == "150.00"
+
     april_search = client.get(
         "/api/v1/cashflow",
         headers=headers,
@@ -523,6 +536,14 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     )
     assert amount_search.status_code == 200
     assert [item["amount"] for item in amount_search.json()["items"]] == ["200.00"]
+
+    all_amount_search = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"month": "2026-04", "search": "200.00", "all": "true"},
+    )
+    assert all_amount_search.status_code == 200
+    assert [item["amount"] for item in all_amount_search.json()["items"]] == ["200.00"]
 
     all_search = client.get(
         "/api/v1/cashflow",
@@ -618,9 +639,9 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
     )
     assert preview_response.status_code == 200
     preview_text = PdfReader(BytesIO(preview_response.content)).pages[0].extract_text()
-    assert "Cashflow 52 Report" in preview_text
+    assert "Cashflow Flat 52 Report" in preview_text
     assert "Supplier 52" in preview_text
-    assert "Flat" not in preview_text
+    assert "Supplier\nFlat\n" not in preview_text
 
 
 def test_permission_for_non_admin_or_manager(client: TestClient) -> None:
@@ -731,6 +752,16 @@ def test_system_invoice_can_be_retrieved_and_updated_without_recreating_cashflow
     assert created.status_code == 201
     record_id = created.json()["id"]
     assert created.json()["system_invoice_type"] == "cleaner"
+
+    direct_value_update = client.patch(
+        f"/api/v1/cashflow/{record_id}",
+        headers=headers,
+        json={"value": "-99.00"},
+    )
+    assert direct_value_update.status_code == 422
+    assert direct_value_update.json()["detail"] == (
+        "System invoice values can only be changed by regenerating the invoice"
+    )
 
     draft_response = client.get(f"/api/v1/cashflow/{record_id}/system-invoice", headers=headers)
     assert draft_response.status_code == 200
@@ -1026,7 +1057,7 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
 
     message = sent_messages[0]
     assert message["To"] == "destino@example.com"
-    assert message["Subject"] == "Cashflow report 2026-04_to_2026-05"
+    assert message["Subject"] == "Cashflow Penthouse report 2026-04_to_2026-05"
 
     attachment = next(message.iter_attachments())
     assert attachment.get_filename() == "cashflow-report-2026-04_to_2026-05.pdf"
@@ -1035,6 +1066,7 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
     reader = PdfReader(BytesIO(attachment.get_content()))
     assert len(reader.pages) >= 2
     first_page_text = reader.pages[0].extract_text()
+    assert "Cashflow Penthouse Report" in first_page_text
     assert "Period: 2026-04_to_2026-05" in first_page_text
     assert "Opening Balance" in first_page_text
     assert "£ 300.00" in first_page_text

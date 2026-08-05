@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
 from xml.sax.saxutils import escape
@@ -99,10 +99,31 @@ class CashFlowService:
     def list_month(
         self,
         month: str | None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         search: str | None = None,
         scope: str | None = None,
         include_all: bool = False,
     ) -> CashFlowListResponse:
+        if date_from is not None or date_to is not None:
+            if date_from is None or date_to is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Both start and end dates are required for a custom period",
+                )
+            if date_from > date_to:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Start date must be before or equal to end date",
+                )
+            return self.list_range(
+                "Customized",
+                date_from,
+                date_to + timedelta(days=1),
+                search,
+                scope,
+            )
+
         if include_all:
             cashflow_scope = self._normalize_scope(scope)
             return self._listing_for_records(
@@ -209,6 +230,16 @@ class CashFlowService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Cash flow record not found",
+            )
+
+        if (
+            record.system_invoice_type
+            and "value" in payload.model_fields_set
+            and payload.value is not None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="System invoice values can only be changed by regenerating the invoice",
             )
 
         if "scope" in payload.model_fields_set:
@@ -841,7 +872,11 @@ class CashFlowService:
 
     @classmethod
     def _scope_report_name(cls, scope: str | None) -> str:
-        return "Cashflow 52" if cls._normalize_scope(scope) == CASHFLOW_52_SCOPE else "Cashflow"
+        return (
+            "Cashflow Flat 52"
+            if cls._normalize_scope(scope) == CASHFLOW_52_SCOPE
+            else "Cashflow Penthouse"
+        )
 
     @staticmethod
     def _parse_month(month: str | None) -> tuple[str, date, date]:

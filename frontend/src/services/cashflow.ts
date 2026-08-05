@@ -112,10 +112,12 @@ export type CashFlowPublicShare = {
 };
 
 export const cashFlowService = {
-  async list(params: { month: string; search?: string; scope?: CashFlowScope; all?: boolean }) {
+  async list(params: { month: string; dateFrom?: string; dateTo?: string; search?: string; scope?: CashFlowScope; all?: boolean }) {
     const { data } = await api.get<CashFlowListResponse>("/cashflow", {
       params: {
         month: params.month,
+        date_from: params.dateFrom,
+        date_to: params.dateTo,
         search: params.search || undefined,
         scope: params.scope || undefined,
         all: params.all || undefined
