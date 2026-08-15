@@ -266,6 +266,7 @@ describe("CashFlowPage records", () => {
 
     await screen.findByText("Added to the wrong cashflow");
     let table = screen.getByRole("table");
+    expect(table.parentElement?.className).toContain("max-h-[calc(100dvh-24rem)]");
     expect(table.parentElement?.className).toContain("overflow-y-auto");
     expect(table.querySelector("tfoot")?.className).toContain("sticky");
     expect(table.querySelector("tfoot")?.className).toContain("bottom-0");
@@ -273,6 +274,7 @@ describe("CashFlowPage records", () => {
     rerender(<CashFlowPage scope="cashflow52" showFlat={false} />);
 
     table = await screen.findByRole("table");
+    expect(table.parentElement?.className).toContain("max-h-[calc(100dvh-24rem)]");
     expect(table.parentElement?.className).toContain("overflow-y-auto");
     expect(table.querySelector("tfoot")?.className).toContain("sticky");
   });
