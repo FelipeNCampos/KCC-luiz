@@ -8,6 +8,7 @@ export type CashFlowRow = {
   id: number;
   payment_number: number;
   has_invoice: boolean;
+  has_invoice_media: boolean;
   invoice_number: string | null;
   invoice_media_name: string | null;
   system_invoice_type: SystemInvoiceType | null;

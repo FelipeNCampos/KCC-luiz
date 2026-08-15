@@ -51,6 +51,7 @@ describe("CashFlowPage records", () => {
         id: 10,
         payment_number: 1,
         has_invoice: false,
+        has_invoice_media: false,
         invoice_number: null,
         invoice_media_name: null,
         system_invoice_type: null,
@@ -94,6 +95,16 @@ describe("CashFlowPage records", () => {
     expect(textColumnFooter?.querySelector("button")).toBe(deleteButton);
   });
 
+  it("focuses the editable record details from the popup Edit button", async () => {
+    render(<CashFlowPage />);
+
+    fireEvent.click((await screen.findByText("Added to the wrong cashflow")).closest("tr")!);
+    const invoiceNumber = await screen.findByLabelText("Invoice number");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(document.activeElement).toBe(invoiceNumber);
+  });
+
   it("saves the textual changes made in the row editor", async () => {
     render(<CashFlowPage />);
 
@@ -121,6 +132,57 @@ describe("CashFlowPage records", () => {
     render(<CashFlowPage />);
 
     expect(screen.getByPlaceholderText("Search by Description, Supplier, Flat or Amount")).toBeTruthy();
+  });
+
+  it("shows Yes only when an invoice has attached media", async () => {
+    vi.mocked(cashFlowService.list).mockResolvedValue({
+      month: "2026-04",
+      monthly_total: "0.00",
+      current_balance: "0.00",
+      items: [
+        {
+          id: 12,
+          payment_number: 2,
+          has_invoice: true,
+          has_invoice_media: false,
+          invoice_number: null,
+          invoice_media_name: null,
+          system_invoice_type: null,
+          record_date: "2026-04-13",
+          amount: "-10.00",
+          description: "Invoice number only",
+          supplier: null,
+          flat: null,
+          balance: "65.00",
+          created_by_user_id: 1,
+          created_at: "2026-04-13T12:00:00Z"
+        },
+        {
+          id: 13,
+          payment_number: 3,
+          has_invoice: true,
+          has_invoice_media: true,
+          invoice_number: "INV-13",
+          invoice_media_name: "invoice.pdf",
+          system_invoice_type: null,
+          record_date: "2026-04-14",
+          amount: "10.00",
+          description: "Invoice with media",
+          supplier: null,
+          flat: null,
+          balance: "75.00",
+          created_by_user_id: 1,
+          created_at: "2026-04-14T12:00:00Z"
+        }
+      ]
+    } as never);
+
+    render(<CashFlowPage />);
+
+    const noMediaRow = (await screen.findByText("Invoice number only")).closest("tr");
+    const mediaRow = screen.getByText("Invoice with media").closest("tr");
+    expect(noMediaRow?.children[1]?.textContent).toBe("No");
+    expect(mediaRow?.children[1]?.textContent).toBe("Yes");
   });
 
   it("filters both cashflows by a custom date period and labels the month as Customized", async () => {
@@ -199,6 +261,22 @@ describe("CashFlowPage records", () => {
     expect(totalLabels[1].nextElementSibling?.textContent).toBe("£75.00");
   });
 
+  it("keeps the totals visible in the scrollable table for both cashflows", async () => {
+    const { rerender } = render(<CashFlowPage />);
+
+    await screen.findByText("Added to the wrong cashflow");
+    let table = screen.getByRole("table");
+    expect(table.parentElement?.className).toContain("overflow-y-auto");
+    expect(table.querySelector("tfoot")?.className).toContain("sticky");
+    expect(table.querySelector("tfoot")?.className).toContain("bottom-0");
+
+    rerender(<CashFlowPage scope="cashflow52" showFlat={false} />);
+
+    table = await screen.findByRole("table");
+    expect(table.parentElement?.className).toContain("overflow-y-auto");
+    expect(table.querySelector("tfoot")?.className).toContain("sticky");
+  });
+
   it("searches all records when All is selected", async () => {
     render(<CashFlowPage />);
 
@@ -221,6 +299,7 @@ describe("CashFlowPage records", () => {
       id: 11,
       payment_number: 2,
       has_invoice: true,
+      has_invoice_media: false,
       invoice_number: "INV-2026-03",
       invoice_media_name: null,
       system_invoice_type: null,
@@ -279,6 +358,7 @@ describe("CashFlowPage records", () => {
         id: 42,
         payment_number: 1,
         has_invoice: true,
+        has_invoice_media: true,
         invoice_number: "Inv-0042",
         invoice_media_name: "invoice.pdf",
         system_invoice_type: "cleaner",
@@ -319,6 +399,7 @@ describe("CashFlowPage records", () => {
         id: 42,
         payment_number: 1,
         has_invoice: true,
+        has_invoice_media: true,
         invoice_number: "Inv-0042",
         invoice_media_name: "invoice.pdf",
         system_invoice_type: "cleaner",
@@ -361,6 +442,7 @@ describe("CashFlowPage records", () => {
         id: 43,
         payment_number: 2,
         has_invoice: true,
+        has_invoice_media: true,
         invoice_number: "Inv-0043",
         invoice_media_name: "contractor.pdf",
         system_invoice_type: "contractor",

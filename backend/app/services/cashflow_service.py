@@ -194,6 +194,9 @@ class CashFlowService:
                     id=record.id,
                     payment_number=dynamic_payment_number,
                     has_invoice=record.has_invoice,
+                    has_invoice_media=bool(
+                        record.invoice_media_data and record.invoice_media_mime
+                    ),
                     invoice_number=record.invoice_number,
                     invoice_media_name=record.invoice_media_name,
                     system_invoice_type=record.system_invoice_type,

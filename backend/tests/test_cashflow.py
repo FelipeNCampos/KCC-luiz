@@ -403,6 +403,7 @@ def test_create_record_allows_invoice_without_media(client: TestClient) -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["has_invoice"] is True
+    assert body["has_invoice_media"] is False
     assert body["invoice_media_name"] is None
 
 
@@ -705,6 +706,7 @@ def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
 
     record = create_response.json()
     assert record["has_invoice"] is True
+    assert record["has_invoice_media"] is True
     assert record["invoice_number"] == "INV-2026-0042"
     assert record["invoice_media_name"] == "invoice.pdf"
 

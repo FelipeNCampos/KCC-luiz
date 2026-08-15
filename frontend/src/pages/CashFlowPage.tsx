@@ -126,6 +126,7 @@ const initialForm: FormState = {
 export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = true }: CashFlowPageProps = {}) {
   const monthInputRef = useRef<HTMLInputElement | null>(null);
   const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const recordInvoiceNumberInputRef = useRef<HTMLInputElement | null>(null);
   const recordRowRefs = useRef(new Map<number, HTMLTableRowElement>());
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
   const [customPeriod, setCustomPeriod] = useState<CustomPeriod | null>(null);
@@ -408,7 +409,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     });
 
     try {
-      if (!row.has_invoice || !row.invoice_media_name) {
+      if (!row.has_invoice_media || !row.invoice_media_name) {
         setRecordEditor(createEditor(null));
         return;
       }
@@ -553,6 +554,10 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     link.href = recordEditor.preview.url;
     link.download = recordEditor.preview.fileName;
     link.click();
+  }
+
+  function focusRecordEditor() {
+    recordInvoiceNumberInputRef.current?.focus();
   }
 
   async function handleSaveRecord(event: FormEvent<HTMLFormElement>) {
@@ -766,7 +771,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       ) : null}
 
       <section className="oak-card overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="max-h-[calc(100dvh-18rem)] overflow-x-auto overflow-y-auto">
           <table className={`w-full ${tableMinWidthClass} text-left`}>
             <thead className="bg-oak-panel text-[11px] uppercase text-oak-muted">
               <tr>
@@ -817,7 +822,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                       >
                         <td className="px-4 py-3 text-sm font-bold text-oak-coffee">#{row.payment_number}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-oak-coffee">
-                          {row.has_invoice ? row.invoice_number ?? "Invoice available" : "—"}
+                          {row.has_invoice_media ? "Yes" : "No"}
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
                         <td
@@ -850,29 +855,33 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                       </td>
                     </tr>
                   )}
-                  <tr className="bg-oak-panel/70">
-                    <td className="px-4 py-3" colSpan={2} />
-                    <td className="bg-oak-panel px-4 py-3 text-sm font-extrabold tracking-[0.08em] text-oak-coffee">
-                      Total:
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right text-sm font-extrabold ${Number(data.monthly_total) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
-                    >
-                      {totalValue}
-                    </td>
-                    <td className="px-4 py-3" colSpan={summaryMiddleColumnSpan} />
-                    <td className="bg-oak-panel px-4 py-3 text-sm font-extrabold tracking-[0.08em] text-oak-coffee">
-                      Total:
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right text-sm font-extrabold ${Number(data.current_balance) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
-                    >
-                      {currentBalance}
-                    </td>
-                  </tr>
                 </>
               ) : null}
             </tbody>
+            {data ? (
+              <tfoot className="sticky bottom-0 z-[1] border-t border-oak-border bg-oak-panel shadow-[0_-4px_8px_rgba(85,49,28,0.08)]">
+                <tr>
+                  <td className="px-4 py-3" colSpan={2} />
+                  <td className="px-4 py-3 text-sm font-extrabold tracking-[0.08em] text-oak-coffee">
+                    Total:
+                  </td>
+                  <td
+                    className={`px-4 py-3 text-right text-sm font-extrabold ${Number(data.monthly_total) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
+                  >
+                    {totalValue}
+                  </td>
+                  <td className="px-4 py-3" colSpan={summaryMiddleColumnSpan} />
+                  <td className="px-4 py-3 text-sm font-extrabold tracking-[0.08em] text-oak-coffee">
+                    Total:
+                  </td>
+                  <td
+                    className={`px-4 py-3 text-right text-sm font-extrabold ${Number(data.current_balance) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
+                  >
+                    {currentBalance}
+                  </td>
+                </tr>
+              </tfoot>
+            ) : null}
           </table>
         </div>
       </section>
@@ -1175,14 +1184,25 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 <p className="oak-label">{title}</p>
                 <h2 className="text-lg font-extrabold text-oak-coffee">Edit record</h2>
               </div>
-              <button
-                className="grid size-9 place-items-center rounded-lg border border-oak-border"
-                type="button"
-                onClick={closeRecordEditor}
-                disabled={savingRecord}
-              >
-                <X size={17} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="oak-button-secondary shrink-0"
+                  type="button"
+                  onClick={focusRecordEditor}
+                  disabled={savingRecord}
+                >
+                  Edit
+                </button>
+                <button
+                  aria-label="Close record details"
+                  className="grid size-9 place-items-center rounded-lg border border-oak-border"
+                  type="button"
+                  onClick={closeRecordEditor}
+                  disabled={savingRecord}
+                >
+                  <X size={17} />
+                </button>
+              </div>
             </header>
 
             <form className="grid min-h-0 flex-1 lg:grid-cols-2" onSubmit={handleSaveRecord}>
@@ -1193,6 +1213,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                       <span className="oak-label">Invoice number</span>
                       <input
                         className="oak-input"
+                        ref={recordInvoiceNumberInputRef}
                         maxLength={120}
                         value={recordEditor.invoiceNumber}
                         onChange={(event) => setRecordEditor((current) => (current ? { ...current, invoiceNumber: event.target.value, error: null } : current))}

@@ -45,6 +45,7 @@ class CashFlowRow(BaseModel):
     id: int
     payment_number: int
     has_invoice: bool
+    has_invoice_media: bool
     invoice_number: str | None
     invoice_media_name: str | None
     system_invoice_type: Literal["cleaner", "contractor"] | None
