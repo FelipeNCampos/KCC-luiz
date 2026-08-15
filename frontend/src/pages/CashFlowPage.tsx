@@ -771,7 +771,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       ) : null}
 
       <section className="oak-card overflow-hidden">
-        <div className="max-h-[calc(100dvh-18rem)] overflow-x-auto overflow-y-auto">
+        <div className="max-h-[calc(100dvh-24rem)] overflow-x-auto overflow-y-auto">
           <table className={`w-full ${tableMinWidthClass} text-left`}>
             <thead className="bg-oak-panel text-[11px] uppercase text-oak-muted">
               <tr>
