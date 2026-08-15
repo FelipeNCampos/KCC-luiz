@@ -83,7 +83,7 @@ describe("CashFlowPage records", () => {
     expect((screen.getByLabelText("Date") as HTMLInputElement).value).toBe("2026-04-12");
     expect((screen.getByLabelText("Value") as HTMLInputElement).value).toBe("75.00");
     expect((screen.getByLabelText("Comments") as HTMLTextAreaElement).value).toBe("Added to the wrong cashflow");
-    expect(screen.queryByRole("button", { name: "Edit invoice media" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit invoice media" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Download invoice media" })).toBeTruthy();
 
     const textColumnFooter = screen.getByRole("button", { name: "Save changes" }).closest("footer");
@@ -183,6 +183,56 @@ describe("CashFlowPage records", () => {
     const mediaRow = screen.getByText("Invoice with media").closest("tr");
     expect(noMediaRow?.children[1]?.textContent).toBe("No");
     expect(mediaRow?.children[1]?.textContent).toBe("Yes");
+  });
+
+  it("lets an invoice without media add it from the details popup", async () => {
+    vi.mocked(cashFlowService.list).mockResolvedValue({
+      month: "2026-04",
+      monthly_total: "-10.00",
+      current_balance: "-10.00",
+      items: [{
+        id: 12,
+        payment_number: 2,
+        has_invoice: true,
+        has_invoice_media: false,
+        invoice_number: "INV-12",
+        invoice_media_name: null,
+        system_invoice_type: null,
+        record_date: "2026-04-13",
+        amount: "-10.00",
+        description: "Invoice without media",
+        supplier: null,
+        flat: null,
+        balance: "65.00",
+        created_by_user_id: 1,
+        created_at: "2026-04-13T12:00:00Z"
+      }]
+    } as never);
+    vi.mocked(cashFlowService.updateInvoiceMedia).mockResolvedValue({ id: 12 } as never);
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:invoice")
+    });
+
+    render(<CashFlowPage />);
+    fireEvent.click((await screen.findByText("Invoice without media")).closest("tr")!);
+
+    const downloadButton = await screen.findByRole("button", { name: "Download invoice media" });
+    const editButton = screen.getByRole("button", { name: "Edit invoice media" });
+    expect(downloadButton.nextElementSibling).toBe(editButton);
+    expect((downloadButton as HTMLButtonElement).disabled).toBe(true);
+
+    const fileInput = screen.getByLabelText("Select invoice media") as HTMLInputElement;
+    const openFilePicker = vi.spyOn(fileInput, "click");
+    fireEvent.click(editButton);
+    expect(openFilePicker).toHaveBeenCalledOnce();
+
+    const file = new File(["invoice"], "invoice.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(cashFlowService.updateInvoiceMedia).toHaveBeenCalledWith(12, { invoiceMedia: file })
+    );
   });
 
   it("filters both cashflows by a custom date period and labels the month as Customized", async () => {

@@ -126,6 +126,7 @@ const initialForm: FormState = {
 export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = true }: CashFlowPageProps = {}) {
   const monthInputRef = useRef<HTMLInputElement | null>(null);
   const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const recordInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
   const recordInvoiceNumberInputRef = useRef<HTMLInputElement | null>(null);
   const recordRowRefs = useRef(new Map<number, HTMLTableRowElement>());
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
@@ -159,6 +160,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [recordEditor, setRecordEditor] = useState<RecordEditorState | null>(null);
   const [savingRecord, setSavingRecord] = useState(false);
+  const [updatingInvoiceMedia, setUpdatingInvoiceMedia] = useState(false);
   const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
   const [systemInvoiceEditor, setSystemInvoiceEditor] = useState<SystemInvoiceEditorState | null>(null);
   const tableColumnCount = showFlat ? 8 : 7;
@@ -554,6 +556,37 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     link.href = recordEditor.preview.url;
     link.download = recordEditor.preview.fileName;
     link.click();
+  }
+
+  async function handleRecordInvoiceMediaSelect(file: File | null) {
+    if (!recordEditor || !file) return;
+
+    setUpdatingInvoiceMedia(true);
+    try {
+      const updatedRecord = await cashFlowService.updateInvoiceMedia(recordEditor.record.id, { invoiceMedia: file });
+      const preview: PreviewState = {
+        url: URL.createObjectURL(file),
+        contentType: file.type || "application/octet-stream",
+        fileName: file.name
+      };
+      setRecordEditor((current) =>
+        current && current.record.id === updatedRecord.id
+          ? { ...current, record: updatedRecord, preview, error: null }
+          : current
+      );
+      setFeedback({ type: "success", message: "Invoice media updated successfully." });
+      await reload();
+    } catch (requestError) {
+      const axiosError = requestError as AxiosError<{ detail?: string }>;
+      setRecordEditor((current) =>
+        current ? { ...current, error: axiosError.response?.data?.detail ?? "Unable to update invoice media." } : current
+      );
+    } finally {
+      setUpdatingInvoiceMedia(false);
+      if (recordInvoiceFileInputRef.current) {
+        recordInvoiceFileInputRef.current.value = "";
+      }
+    }
   }
 
   function focusRecordEditor() {
@@ -1335,19 +1368,33 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                     >
                       <Download size={17} />
                     </button>
-                    {recordEditor.record.system_invoice_type === "cleaner" || recordEditor.record.system_invoice_type === "contractor" ? (
-                      <button
-                        aria-label="Edit invoice media"
-                        className="oak-button-secondary grid !size-10 !min-h-10 !p-0"
-                        title="Edit invoice media"
-                        type="button"
-                        onClick={() => void handleOpenSystemInvoiceEditor(recordEditor.record)}
-                      >
-                        <Pencil size={17} />
-                      </button>
-                    ) : null}
+                    <button
+                      aria-label="Edit invoice media"
+                      className="oak-button-secondary grid !size-10 !min-h-10 !p-0"
+                      disabled={updatingInvoiceMedia}
+                      title="Edit invoice media"
+                      type="button"
+                      onClick={() => {
+                        if (recordEditor.record.system_invoice_type) {
+                          void handleOpenSystemInvoiceEditor(recordEditor.record);
+                          return;
+                        }
+                        recordInvoiceFileInputRef.current?.click();
+                      }}
+                    >
+                      <Pencil size={17} />
+                    </button>
                   </div>
                 </header>
+
+                <input
+                  accept="image/*,application/pdf"
+                  aria-label="Select invoice media"
+                  className="hidden"
+                  ref={recordInvoiceFileInputRef}
+                  type="file"
+                  onChange={(event) => void handleRecordInvoiceMediaSelect(event.target.files?.[0] ?? null)}
+                />
 
                 <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
                   {recordEditor.preview ? (
