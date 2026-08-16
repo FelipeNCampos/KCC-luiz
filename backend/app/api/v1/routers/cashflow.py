@@ -312,6 +312,8 @@ def send_cashflow_report(
         recipient=payload.email,
         start_month=payload.start_month,
         end_month=payload.end_month,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
         scope=payload.scope,
         search=payload.search,
         include_invoice_table=payload.include_invoice_table,
@@ -330,6 +332,8 @@ def preview_cashflow_report(
     period_label, report_data = service.build_range_report_pdf(
         start_month=payload.start_month,
         end_month=payload.end_month,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
         scope=payload.scope,
         search=payload.search,
         include_invoice_table=payload.include_invoice_table,

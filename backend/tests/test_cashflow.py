@@ -559,7 +559,7 @@ def test_month_filter_search_and_month_total_behavior(client: TestClient) -> Non
     assert all_search.json()["current_balance"] == "450.00"
 
 
-def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClient) -> None:
+def test_cashflow_52_scope_is_separate_and_stores_multiple_flats(client: TestClient) -> None:
     admin_token = get_admin_token(client, email="cashflow-52-admin@example.com")
     headers = {"Authorization": f"Bearer {admin_token}"}
 
@@ -587,13 +587,13 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
             "value": "25.00",
             "description": "Cashflow 52 record",
             "supplier": "Supplier 52",
-            "flat": "Should not be stored",
+            "flat": "Flat 50, Flat 51",
         },
     )
     assert scoped_response.status_code == 201
     assert scoped_response.json()["payment_number"] == 1
     assert scoped_response.json()["supplier"] == "Supplier 52"
-    assert scoped_response.json()["flat"] is None
+    assert scoped_response.json()["flat"] == "Flat 50, Flat 51"
 
     main_list = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-04"})
     assert main_list.status_code == 200
@@ -609,16 +609,16 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
     assert scoped_list.json()["monthly_total"] == "25.00"
     assert [item["description"] for item in scoped_list.json()["items"]] == ["Cashflow 52 record"]
     assert scoped_list.json()["items"][0]["supplier"] == "Supplier 52"
-    assert scoped_list.json()["items"][0]["flat"] is None
+    assert scoped_list.json()["items"][0]["flat"] == "Flat 50, Flat 51"
 
     scoped_flat_search = client.get(
         "/api/v1/cashflow",
         headers=headers,
-        params={"month": "2026-04", "scope": "cashflow52", "search": "stored"},
+        params={"month": "2026-04", "scope": "cashflow52", "search": "flat 51"},
     )
     assert scoped_flat_search.status_code == 200
     assert scoped_flat_search.json()["monthly_total"] == "25.00"
-    assert scoped_flat_search.json()["items"] == []
+    assert [item["description"] for item in scoped_flat_search.json()["items"]] == ["Cashflow 52 record"]
 
     scoped_supplier_search = client.get(
         "/api/v1/cashflow",
@@ -642,7 +642,54 @@ def test_cashflow_52_scope_is_separate_and_does_not_store_flat(client: TestClien
     preview_text = PdfReader(BytesIO(preview_response.content)).pages[0].extract_text()
     assert "Cashflow Flat 52 Report" in preview_text
     assert "Supplier 52" in preview_text
-    assert "Supplier\nFlat\n" not in preview_text
+    assert "Supplier\nFlat\n" in preview_text
+
+
+@pytest.mark.parametrize(
+    ("scope", "description", "report_title"),
+    [
+        ("main", "Penthouse date-range record", "Cashflow Penthouse Report"),
+        ("cashflow52", "Flat 52 date-range record", "Cashflow Flat 52 Report"),
+    ],
+)
+def test_cashflow_report_preview_accepts_an_inclusive_date_range(
+    client: TestClient, scope: str, description: str, report_title: str
+) -> None:
+    admin_token = get_admin_token(client, email=f"date-report-{scope}@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    for record_date, value, record_description in (
+        ("2026-04-09", "100.00", "Before selected dates"),
+        ("2026-04-10", "25.00", description),
+        ("2026-04-20", "50.00", "Last selected date"),
+        ("2026-04-21", "75.00", "After selected dates"),
+    ):
+        response = client.post(
+            "/api/v1/cashflow",
+            headers=headers,
+            data={
+                "scope": scope,
+                "invoice": "No",
+                "date": record_date,
+                "value": value,
+                "description": record_description,
+            },
+        )
+        assert response.status_code == 201
+
+    preview_response = client.post(
+        "/api/v1/cashflow/report/preview",
+        headers=headers,
+        json={"scope": scope, "date_from": "2026-04-10", "date_to": "2026-04-20"},
+    )
+
+    assert preview_response.status_code == 200
+    preview_text = PdfReader(BytesIO(preview_response.content)).pages[0].extract_text()
+    assert report_title in preview_text
+    assert "Period: 2026-04-10_to_2026-04-20" in preview_text
+    assert "Last selected date" in preview_text
+    assert "Before selected dates" not in preview_text
+    assert "After selected dates" not in preview_text
 
 
 def test_permission_for_non_admin_or_manager(client: TestClient) -> None:
@@ -934,7 +981,7 @@ def test_update_record_moves_it_to_another_cashflow(client: TestClient) -> None:
         json={"scope": "cashflow52"},
     )
     assert moved.status_code == 200
-    assert moved.json()["flat"] is None
+    assert moved.json()["flat"] == "Flat 50"
 
     main_records = client.get(
         "/api/v1/cashflow", headers=headers, params={"month": "2026-04", "scope": "main"}

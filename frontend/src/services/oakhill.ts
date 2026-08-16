@@ -168,6 +168,10 @@ export const oakhillService = {
     const { data } = await api.post<Acess>(`/acess/${id}/time-out`, payload);
     return data;
   },
+  async createAccessCounterpart(id: string, payload: { data: string }) {
+    const { data } = await api.post<Acess>(`/acess/${id}/counterpart`, payload);
+    return data;
+  },
   async deleteAccess(id: string) {
     await api.delete(`/acess/${id}`);
   },
@@ -177,6 +181,10 @@ export const oakhillService = {
   },
   async cleanerCheckIn(payload: { name: string; mobile: string; building_id: string }) {
     const { data } = await api.post<Acess>("/general-access/cleaner/check-in", payload);
+    return data;
+  },
+  async cleanerCheckInMany(payload: { name: string; mobile: string; building_ids: string[] }) {
+    const { data } = await api.post<ApiList<Acess>>("/general-access/cleaner/check-in-batch", payload);
     return data;
   },
   async cleanerChecklist(mobile: string) {
@@ -211,8 +219,16 @@ export const oakhillService = {
     const { data } = await api.post<ContractorPublicVisit>("/contractor-access/check-in", payload);
     return data;
   },
+  async contractorCheckInMany(payload: { condominio_id?: string; name: string; company: string; building_ids: string[]; job_description: string; mobile: string }) {
+    const { data } = await api.post<ApiList<ContractorPublicVisit>>("/contractor-access/check-in-batch", payload);
+    return data;
+  },
   async contractorCheckOut(payload: { condominio_id?: string; visit_id: string; out_at?: string }) {
     const { data } = await api.post<ContractorPublicVisit>("/contractor-access/check-out", payload);
+    return data;
+  },
+  async contractorCheckOutMany(payload: { condominio_id?: string; mobile: string; out_at?: string }) {
+    const { data } = await api.post<ApiList<ContractorPublicVisit>>("/contractor-access/check-out-batch", payload);
     return data;
   },
   async contractorVisits(params: { search?: string; date_from?: string; date_to?: string } = {}) {

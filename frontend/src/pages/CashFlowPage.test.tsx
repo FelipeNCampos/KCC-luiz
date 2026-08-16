@@ -105,6 +105,49 @@ describe("CashFlowPage records", () => {
     expect(document.activeElement).toBe(invoiceNumber);
   });
 
+  it("allows multiple flats to be selected in the record editor", async () => {
+    vi.mocked(cashFlowService.list).mockResolvedValue({
+      month: "2026-04",
+      monthly_total: "75.00",
+      current_balance: "75.00",
+      items: [{
+        id: 10,
+        payment_number: 1,
+        has_invoice: false,
+        has_invoice_media: false,
+        invoice_number: null,
+        invoice_media_name: null,
+        system_invoice_type: null,
+        record_date: "2026-04-12",
+        amount: "75.00",
+        description: "Shared invoice",
+        supplier: null,
+        flat: "Flat 50, Flat 52",
+        balance: "75.00",
+        created_by_user_id: 1,
+        created_at: "2026-04-12T12:00:00Z"
+      }]
+    });
+
+    render(<CashFlowPage />);
+
+    fireEvent.click((await screen.findByText("Shared invoice")).closest("tr")!);
+    const flatSelect = await screen.findByLabelText("Flat") as HTMLSelectElement;
+
+    expect(flatSelect.multiple).toBe(true);
+    expect(Array.from(flatSelect.selectedOptions, (option) => option.value)).toEqual(["Flat 50", "Flat 52"]);
+  });
+
+  it("allows multiple flats to be selected when creating a record", async () => {
+    render(<CashFlowPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New record" }));
+    const flatSelect = screen.getByLabelText("Flat") as HTMLSelectElement;
+
+    expect(flatSelect.tagName).toBe("SELECT");
+    expect(flatSelect.multiple).toBe(true);
+  });
+
   it("saves the textual changes made in the row editor", async () => {
     render(<CashFlowPage />);
 
@@ -185,6 +228,45 @@ describe("CashFlowPage records", () => {
     expect(mediaRow?.children[1]?.textContent).toBe("Yes");
   });
 
+  it("loads legacy invoice media even when its filename is missing", async () => {
+    vi.mocked(cashFlowService.list).mockResolvedValue({
+      month: "2026-04",
+      monthly_total: "-10.00",
+      current_balance: "-10.00",
+      items: [{
+        id: 14,
+        payment_number: 4,
+        has_invoice: true,
+        has_invoice_media: true,
+        invoice_number: "INV-14",
+        invoice_media_name: null,
+        system_invoice_type: null,
+        record_date: "2026-04-15",
+        amount: "-10.00",
+        description: "Legacy invoice media",
+        supplier: null,
+        flat: null,
+        balance: "65.00",
+        created_by_user_id: 1,
+        created_at: "2026-04-15T12:00:00Z"
+      }]
+    } as never);
+    vi.mocked(cashFlowService.getInvoiceMedia).mockResolvedValue({
+      blob: new Blob(["%PDF-legacy invoice"], { type: "application/pdf" }),
+      contentType: "application/pdf"
+    });
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:legacy-invoice")
+    });
+
+    render(<CashFlowPage />);
+    fireEvent.click((await screen.findByText("Legacy invoice media")).closest("tr")!);
+
+    await waitFor(() => expect(cashFlowService.getInvoiceMedia).toHaveBeenCalledWith(14));
+    expect(screen.getByTitle("Invoice preview")).toBeTruthy();
+  });
+
   it("lets an invoice without media add it from the details popup", async () => {
     vi.mocked(cashFlowService.list).mockResolvedValue({
       month: "2026-04",
@@ -235,7 +317,7 @@ describe("CashFlowPage records", () => {
     );
   });
 
-  it("filters both cashflows by a custom date period and labels the month as Customized", async () => {
+  it("filters both cashflows by a custom date period and labels the month as Custom", async () => {
     const applyCustomPeriod = async (scope: "main" | "cashflow52") => {
       fireEvent.click(screen.getByRole("button", { name: "Customize period" }));
       await screen.findByRole("heading", { name: "Customize cashflow period" });
@@ -253,7 +335,7 @@ describe("CashFlowPage records", () => {
           })
         )
       );
-      expect((screen.getByLabelText("Month") as HTMLInputElement).value).toBe("Customized");
+      expect((screen.getByLabelText("Month") as HTMLInputElement).value).toBe("Custom");
     };
 
     const main = render(<CashFlowPage />);
@@ -278,12 +360,42 @@ describe("CashFlowPage records", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply period" }));
 
     const monthInput = screen.getByLabelText("Month") as HTMLInputElement;
-    expect(monthInput.value).toBe("Customized");
+    expect(monthInput.value).toBe("Personalizado");
     fireEvent.click(monthInput);
 
     await waitFor(() => expect((screen.getByLabelText("Month") as HTMLInputElement).type).toBe("month"));
     expect(requestAnimationFrame).not.toHaveBeenCalled();
     expect(showPicker).toHaveBeenCalled();
+  });
+
+  it("switches both cashflow reports from month to an inclusive date range", async () => {
+    vi.mocked(cashFlowService.previewReport).mockResolvedValue(new Blob(["report"]) as never);
+    vi.mocked(cashFlowService.sendReport).mockResolvedValue({ message: "Cash flow report sent" } as never);
+    render(<CashFlowPage scope="cashflow52" showFlat={false} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Report" }));
+    await screen.findByRole("heading", { name: "Send report" });
+
+    expect((screen.getByLabelText("Start month") as HTMLInputElement).type).toBe("month");
+    expect(screen.queryByText("Add invoice table before media pages")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Date" }));
+    expect((screen.getByLabelText("Start date") as HTMLInputElement).type).toBe("date");
+    expect((screen.getByLabelText("End date") as HTMLInputElement).type).toBe("date");
+
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-04-10" } });
+    fireEvent.change(screen.getByLabelText("End date"), { target: { value: "2026-04-20" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "report@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send report" }));
+
+    await waitFor(() =>
+      expect(cashFlowService.sendReport).toHaveBeenCalledWith({
+        email: "report@example.com",
+        scope: "cashflow52",
+        date_from: "2026-04-10",
+        date_to: "2026-04-20"
+      })
+    );
   });
 
   it("shows the amount total beside the balance total in both cashflows", async () => {

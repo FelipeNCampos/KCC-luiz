@@ -80,6 +80,8 @@ class CashFlowReportRequest(BaseModel):
     scope: str | None = None
     start_month: str | None = None
     end_month: str | None = None
+    date_from: date | None = None
+    date_to: date | None = None
     month: str | None = None
     search: str | None = None
     include_invoice_table: bool = False
@@ -89,6 +91,8 @@ class CashFlowReportPreviewRequest(BaseModel):
     scope: str | None = None
     start_month: str | None = None
     end_month: str | None = None
+    date_from: date | None = None
+    date_to: date | None = None
     month: str | None = None
     search: str | None = None
     include_invoice_table: bool = False

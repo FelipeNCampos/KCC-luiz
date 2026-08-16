@@ -136,6 +136,7 @@ export function CleanerPage() {
   const [access, setAccess] = useState<Acess[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [outPair, setOutPair] = useState<Pair | null>(null);
+  const [actionPair, setActionPair] = useState<Pair | null>(null);
   const [detailPair, setDetailPair] = useState<Pair | null>(null);
   const [editForm, setEditForm] = useState({ building_id: "", in_date: "", in_time: "", out_date: "", out_time: "" });
   const [savingEdit, setSavingEdit] = useState(false);
@@ -163,6 +164,7 @@ export function CleanerPage() {
         setIsSettingsOpen(false);
         setIsInvoiceOpen(false);
         setOutPair(null);
+        setActionPair(null);
         setDetailPair(null);
       }
     };
@@ -182,20 +184,22 @@ export function CleanerPage() {
     const rows = [...access]
       .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
     const result: Pair[] = [];
-    let open: Acess | undefined;
+    const openByCleaner = new Map<string, Acess>();
     rows.forEach((row) => {
+      const accessKey = `${row.funcionario_id}:${row.building_id}`;
+      const open = openByCleaner.get(accessKey);
       if (row.operacao === 0) {
         if (open) result.push({ key: open.id, building_id: open.building_id, in: open });
-        open = row;
+        openByCleaner.set(accessKey, row);
       } else if (open) {
         result.push({ key: `${open.id}-${row.id}`, building_id: open.building_id, in: open, out: row });
-        open = undefined;
+        openByCleaner.delete(accessKey);
       } else {
         result.push({ key: row.id, building_id: row.building_id, out: row });
       }
     });
-    if (open) result.push({ key: open.id, building_id: open.building_id, in: open });
-    return result.reverse();
+    openByCleaner.forEach((open) => result.push({ key: open.id, building_id: open.building_id, in: open }));
+    return result.sort((a, b) => new Date(b.in?.data ?? b.out?.data ?? 0).getTime() - new Date(a.in?.data ?? a.out?.data ?? 0).getTime());
   }, [access]);
 
   const filteredPairs = useMemo(() => {
@@ -206,8 +210,10 @@ export function CleanerPage() {
       if (!query) return true;
 
       const buildingName = buildingById.get(pair.building_id) ?? pair.building_id;
+      const worker = funcionarioById.get(pair.in?.funcionario_id ?? pair.out?.funcionario_id ?? "");
       const searchable = [
         buildingName,
+        worker?.nome,
         formatDate(recordDate),
         formatTime(pair.in?.data),
         formatTime(pair.out?.data),
@@ -217,7 +223,7 @@ export function CleanerPage() {
         .toLowerCase();
       return searchable.includes(query);
     });
-  }, [buildingById, month, pairs, search]);
+  }, [buildingById, funcionarioById, month, pairs, search]);
 
   const analytics = useMemo(() => {
     const weekStart = startOfWeek();
@@ -248,6 +254,8 @@ export function CleanerPage() {
     if (!window.confirm("Delete this cleaner record?")) return;
     if (pair.in) await oakhillService.deleteAccess(pair.in.id);
     if (pair.out) await oakhillService.deleteAccess(pair.out.id);
+    window.localStorage.setItem("oakhill-cleaner-access-updated", String(Date.now()));
+    setActionPair(null);
     await reload();
   }
 
@@ -259,6 +267,7 @@ export function CleanerPage() {
 
   function openEditModal(pair: Pair) {
     setFeedback(null);
+    setActionPair(null);
     setDetailPair(pair);
     setEditForm({
       building_id: pair.building_id,
@@ -275,10 +284,37 @@ export function CleanerPage() {
     setSavingEdit(true);
     setFeedback(null);
     try {
-      const updates = [];
-      if (detailPair.in) updates.push(oakhillService.updateAccess(detailPair.in.id, { building_id: editForm.building_id, data: dateTimeValue(editForm.in_date, editForm.in_time) }));
-      if (detailPair.out) updates.push(oakhillService.updateAccess(detailPair.out.id, { building_id: editForm.building_id, data: dateTimeValue(editForm.out_date, editForm.out_time) }));
-      await Promise.all(updates);
+      const hasInValue = Boolean(editForm.in_date || editForm.in_time);
+      const hasOutValue = Boolean(editForm.out_date || editForm.out_time);
+      const hasCompleteIn = Boolean(editForm.in_date && editForm.in_time);
+      const hasCompleteOut = Boolean(editForm.out_date && editForm.out_time);
+      if ((hasInValue && !hasCompleteIn) || (hasOutValue && !hasCompleteOut)) {
+        setFeedback("Enter both a date and time for IN and OUT.");
+        return;
+      }
+
+      if (detailPair.in) {
+        await oakhillService.updateAccess(detailPair.in.id, {
+          building_id: editForm.building_id,
+          data: dateTimeValue(editForm.in_date, editForm.in_time),
+        });
+      }
+      if (detailPair.out) {
+        await oakhillService.updateAccess(detailPair.out.id, {
+          building_id: editForm.building_id,
+          data: dateTimeValue(editForm.out_date, editForm.out_time),
+        });
+      }
+      if (!detailPair.in && hasCompleteIn && detailPair.out) {
+        await oakhillService.createAccessCounterpart(detailPair.out.id, {
+          data: dateTimeValue(editForm.in_date, editForm.in_time),
+        });
+      }
+      if (!detailPair.out && hasCompleteOut && detailPair.in) {
+        await oakhillService.timeOutAccess(detailPair.in.id, {
+          data: dateTimeValue(editForm.out_date, editForm.out_time),
+        });
+      }
       setDetailPair(null);
       setFeedback("Record updated successfully.");
       await reload();
@@ -359,13 +395,15 @@ export function CleanerPage() {
           </button>
         </div>
         <table className="w-full min-w-[860px] text-left text-sm">
-            <thead className="bg-oak-panel text-oak-muted"><tr><th className="p-3">Date</th><th>Flat</th><th>Time IN</th><th>Time OUT</th><th>Used</th><th>Checklist</th><th>Actions</th></tr></thead>
+            <thead className="bg-oak-panel text-oak-muted"><tr><th className="p-3">Date</th><th>Name</th><th>Flat</th><th>Time IN</th><th>Time OUT</th><th>Used</th><th>Checklist</th></tr></thead>
             <tbody>{filteredPairs.map((pair) => {
               const used = minutesBetween(pair.in?.data, pair.out?.data);
               const checklistCount = pair.out?.checkout_checklist_items.length ?? 0;
+              const worker = funcionarioById.get(pair.in?.funcionario_id ?? pair.out?.funcionario_id ?? "");
               return (
-                <tr className="cursor-pointer border-t border-oak-border hover:bg-oak-panel/70" key={pair.key} onClick={() => openEditModal(pair)}>
+                <tr className="cursor-pointer border-t border-oak-border hover:bg-oak-panel/70" key={pair.key} onClick={() => setActionPair(pair)}>
                   <td className="p-3">{formatDate(pair.in?.data ?? pair.out?.data ?? "")}</td>
+                  <td>{worker?.nome ?? "-"}</td>
                   <td>{buildingById.get(pair.building_id) ?? pair.building_id}</td>
                   <td>{formatTime(pair.in?.data)}</td>
                   <td>
@@ -375,16 +413,35 @@ export function CleanerPage() {
                   </td>
                   <td>{formatMinutes(used)}</td>
                   <td>{checklistCount ? <span className="inline-flex items-center gap-2 font-bold text-emerald-800"><ClipboardCheck size={15} />{checklistCount}</span> : "-"}</td>
-                  <td><button className="oak-button-secondary !min-h-9" type="button" onClick={(event) => { event.stopPropagation(); void deletePair(pair); }}>Delete</button></td>
                 </tr>
               );
             })}</tbody>
           </table>
       </section>
 
+      {actionPair ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
+          <article className="w-full max-w-sm rounded-2xl border border-oak-border bg-white shadow-oakLg">
+            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
+              <div>
+                <p className="oak-label">Cleaner</p>
+                <h2 className="text-lg font-extrabold text-oak-coffee">Cleaner record</h2>
+              </div>
+              <button aria-label="Close record actions" className="grid size-9 place-items-center rounded-lg border border-oak-border" type="button" onClick={() => setActionPair(null)}>
+                <X size={17} />
+              </button>
+            </header>
+            <div className="flex gap-3 p-6">
+              <button className="oak-button-primary flex-1" type="button" onClick={() => openEditModal(actionPair)}>Edit</button>
+              <button className="oak-button-secondary flex-1 text-red-700" type="button" onClick={() => void deletePair(actionPair)}>Delete</button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
       {detailPair ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
-          <article className="w-full max-w-xl rounded-2xl border border-oak-border bg-white shadow-oakLg">
+          <article className="w-full max-w-3xl rounded-2xl border border-oak-border bg-white shadow-oakLg">
             <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
               <div>
                 <p className="oak-label">Cleaner</p>
@@ -400,8 +457,8 @@ export function CleanerPage() {
                 return <div className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/65 sm:col-span-2">{worker?.nome ?? "Cleaner"}{worker?.mobile ? ` · ${worker.mobile}` : ""}</div>;
               })()}
               <label className="grid gap-2 sm:col-span-2"><span className="oak-label">Flat</span><select className="oak-input" value={editForm.building_id} onChange={(event) => setEditForm((current) => ({ ...current, building_id: event.target.value }))} required>{buildings.map((building) => <option key={building.id} value={building.id}>{building.nome}</option>)}</select></label>
-              {detailPair.in ? <><label className="grid gap-2"><span className="oak-label">IN date</span><input className="oak-input" type="date" value={editForm.in_date} onChange={(event) => setEditForm((current) => ({ ...current, in_date: event.target.value }))} required /></label><label className="grid gap-2"><span className="oak-label">IN time</span><input className="oak-input" type="time" value={editForm.in_time} onChange={(event) => setEditForm((current) => ({ ...current, in_time: event.target.value }))} required /></label></> : null}
-              {detailPair.out ? <><label className="grid gap-2"><span className="oak-label">OUT date</span><input className="oak-input" type="date" value={editForm.out_date} onChange={(event) => setEditForm((current) => ({ ...current, out_date: event.target.value }))} required /></label><label className="grid gap-2"><span className="oak-label">OUT time</span><input className="oak-input" type="time" value={editForm.out_time} onChange={(event) => setEditForm((current) => ({ ...current, out_time: event.target.value }))} required /></label></> : null}
+              <label className="grid gap-2"><span className="oak-label">IN date</span><input className="oak-input" type="date" value={editForm.in_date} onChange={(event) => setEditForm((current) => ({ ...current, in_date: event.target.value }))} required={Boolean(detailPair.in)} /></label><label className="grid gap-2"><span className="oak-label">IN time</span><input className="oak-input" type="time" value={editForm.in_time} onChange={(event) => setEditForm((current) => ({ ...current, in_time: event.target.value }))} required={Boolean(detailPair.in)} /></label>
+              <label className="grid gap-2"><span className="oak-label">OUT date</span><input className="oak-input" type="date" value={editForm.out_date} onChange={(event) => setEditForm((current) => ({ ...current, out_date: event.target.value }))} required={Boolean(detailPair.out)} /></label><label className="grid gap-2"><span className="oak-label">OUT time</span><input className="oak-input" type="time" value={editForm.out_time} onChange={(event) => setEditForm((current) => ({ ...current, out_time: event.target.value }))} required={Boolean(detailPair.out)} /></label>
               <div className="rounded-xl bg-oak-panel p-4 text-sm font-bold text-black/65 sm:col-span-2">Checklist: {detailPair.out?.checkout_checklist_items.length ?? 0} items{detailPair.out?.checkout_checklist_items.length ? ` · ${detailPair.out.checkout_checklist_items.map((item) => item.label).join(", ")}` : ""}</div>
               <div className="flex gap-3 sm:col-span-2 sm:justify-end"><button className="oak-button-secondary" type="button" onClick={() => setDetailPair(null)}>Cancel</button><button className="oak-button-primary" disabled={savingEdit} type="submit">{savingEdit ? "Saving..." : "Save changes"}</button></div>
             </form>

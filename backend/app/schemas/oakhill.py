@@ -103,6 +103,13 @@ class CleanerCheckIn(BaseModel):
     building_id: str = "50"
 
 
+class CleanerCheckInBatch(BaseModel):
+    condominio_id: str | None = None
+    name: str
+    mobile: str
+    building_ids: list[str] = Field(min_length=1)
+
+
 class CleanerCheckOut(BaseModel):
     condominio_id: str | None = None
     mobile: str
@@ -143,9 +150,24 @@ class ContractorCheckIn(BaseModel):
     mobile: str
 
 
+class ContractorCheckInBatch(BaseModel):
+    condominio_id: str | None = None
+    name: str
+    company: str
+    building_ids: list[str] = Field(min_length=1)
+    job_description: str
+    mobile: str
+
+
 class ContractorCheckOut(BaseModel):
     condominio_id: str | None = None
     visit_id: str
+    out_at: datetime | None = None
+
+
+class ContractorCheckOutBatch(BaseModel):
+    condominio_id: str | None = None
+    mobile: str
     out_at: datetime | None = None
 
 

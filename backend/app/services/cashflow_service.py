@@ -407,6 +407,8 @@ class CashFlowService:
         recipient: str,
         start_month: str | None,
         end_month: str | None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         scope: str | None = None,
         search: str | None = None,
         include_invoice_table: bool = False,
@@ -415,6 +417,8 @@ class CashFlowService:
         period_label, report_data = self.build_range_report_pdf(
             start_month=start_month,
             end_month=end_month,
+            date_from=date_from,
+            date_to=date_to,
             scope=scope,
             search=search,
             include_invoice_table=include_invoice_table,
@@ -440,14 +444,18 @@ class CashFlowService:
         self,
         start_month: str | None,
         end_month: str | None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         scope: str | None = None,
         search: str | None = None,
         include_invoice_table: bool = False,
         fallback_month: str | None = None,
     ) -> tuple[str, bytes]:
-        period_label, period_start, period_end = self._parse_month_range(
+        period_label, period_start, period_end = self._parse_report_range(
             start_month=start_month,
             end_month=end_month,
+            date_from=date_from,
+            date_to=date_to,
             fallback_month=fallback_month,
         )
         cashflow_scope = self._normalize_scope(scope)
@@ -871,7 +879,7 @@ class CashFlowService:
 
     @classmethod
     def _scope_has_flat(cls, scope: str | None) -> bool:
-        return cls._normalize_scope(scope) == DEFAULT_CASHFLOW_SCOPE
+        return True
 
     @classmethod
     def _scope_report_name(cls, scope: str | None) -> str:
@@ -934,6 +942,35 @@ class CashFlowService:
 
         period_label = start_label if start_label == end_label else f"{start_label}_to_{end_label}"
         return period_label, start_date, end_exclusive
+
+    @classmethod
+    def _parse_report_range(
+        cls,
+        start_month: str | None,
+        end_month: str | None,
+        date_from: date | None,
+        date_to: date | None,
+        fallback_month: str | None = None,
+    ) -> tuple[str, date, date]:
+        if date_from is not None or date_to is not None:
+            if date_from is None or date_to is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Both start and end dates are required",
+                )
+            if date_from > date_to:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Start date must be before or equal to end date",
+                )
+            period_label = (
+                date_from.isoformat()
+                if date_from == date_to
+                else f"{date_from.isoformat()}_to_{date_to.isoformat()}"
+            )
+            return period_label, date_from, date_to + timedelta(days=1)
+
+        return cls._parse_month_range(start_month, end_month, fallback_month)
 
     @staticmethod
     def _normalize_system_invoice(

@@ -84,7 +84,7 @@ export function AppRoutes() {
         path="/cash-flow-52"
         element={
           <AdminRoute>
-            <CashFlowPage title="Cashflow 52" scope="cashflow52" showFlat={false} />
+            <CashFlowPage title="Cashflow 52" scope="cashflow52" />
           </AdminRoute>
         }
       />

@@ -71,10 +71,11 @@ export type UpdateSystemInvoicePayload = {
 export type CashFlowReportPayload = {
   email: string;
   scope?: CashFlowScope;
-  start_month: string;
-  end_month: string;
+  start_month?: string;
+  end_month?: string;
+  date_from?: string;
+  date_to?: string;
   search?: string;
-  include_invoice_table: boolean;
 };
 
 export type CashFlowShareLink = {

@@ -22,7 +22,7 @@ type FormState = {
   value: string;
   description: string;
   supplier: string;
-  flat: string;
+  flat: string[];
   invoiceMedia: File | null;
 };
 
@@ -39,7 +39,7 @@ type RecordEditorState = {
   value: string;
   description: string;
   supplier: string;
-  flat: string;
+  flat: string[];
   preview: PreviewState | null;
   error: string | null;
 };
@@ -52,9 +52,11 @@ type SystemInvoiceEditorState = {
 
 type ReportFormState = {
   email: string;
+  periodType: "month" | "date";
   startMonth: string;
   endMonth: string;
-  includeInvoiceTable: boolean;
+  startDate: string;
+  endDate: string;
 };
 
 type CustomPeriod = {
@@ -112,6 +114,15 @@ function normalizeFlatValue(value: string | null | undefined) {
   return `Flat ${match[1]}`;
 }
 
+function selectedFlatValues(value: string | null | undefined) {
+  const values = new Set((value ?? "").split(",").map(normalizeFlatValue));
+  return FLAT_OPTIONS.filter((option) => values.has(option));
+}
+
+function serializeFlatValues(values: string[]) {
+  return values.join(", ");
+}
+
 const initialForm: FormState = {
   invoice: "No",
   invoiceNumber: "",
@@ -119,7 +130,7 @@ const initialForm: FormState = {
   value: "",
   description: "",
   supplier: "",
-  flat: "",
+  flat: [],
   invoiceMedia: null
 };
 
@@ -148,9 +159,11 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportForm, setReportForm] = useState<ReportFormState>({
     email: "",
+    periodType: "month",
     startMonth: month,
     endMonth: month,
-    includeInvoiceTable: false
+    startDate: toDateInputValue(new Date()),
+    endDate: toDateInputValue(new Date())
   });
   const [reportError, setReportError] = useState<string | null>(null);
   const [reportPreviewUrl, setReportPreviewUrl] = useState<string | null>(null);
@@ -251,7 +264,10 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   }, [createInvoicePreview]);
 
   useEffect(() => {
-    if (!isReportOpen || !reportForm.startMonth || !reportForm.endMonth || reportForm.startMonth > reportForm.endMonth) {
+    const isMonthPeriod = reportForm.periodType === "month";
+    const startPeriod = isMonthPeriod ? reportForm.startMonth : reportForm.startDate;
+    const endPeriod = isMonthPeriod ? reportForm.endMonth : reportForm.endDate;
+    if (!isReportOpen || !startPeriod || !endPeriod || startPeriod > endPeriod) {
       setReportPreviewUrl((current) => {
         if (current) URL.revokeObjectURL(current);
         return null;
@@ -265,11 +281,11 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
 
     cashFlowService
       .previewReport({
-        start_month: reportForm.startMonth,
-        end_month: reportForm.endMonth,
+        ...(isMonthPeriod
+          ? { start_month: reportForm.startMonth, end_month: reportForm.endMonth }
+          : { date_from: reportForm.startDate, date_to: reportForm.endDate }),
         scope,
-        search: search.trim() || undefined,
-        include_invoice_table: reportForm.includeInvoiceTable
+        search: search.trim() || undefined
       })
       .then((blob) => {
         if (!active) return;
@@ -291,7 +307,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
     return () => {
       active = false;
     };
-  }, [isReportOpen, reportForm.startMonth, reportForm.endMonth, reportForm.includeInvoiceTable, scope, search]);
+  }, [isReportOpen, reportForm.periodType, reportForm.startMonth, reportForm.endMonth, reportForm.startDate, reportForm.endDate, scope, search]);
 
   useEffect(() => {
     return () => {
@@ -347,7 +363,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
         value: form.value,
         description: form.description,
         supplier: form.supplier,
-        flat: showFlat ? form.flat : undefined,
+        flat: showFlat ? serializeFlatValues(form.flat) || undefined : undefined,
         invoiceMedia: form.invoiceMedia
       });
 
@@ -405,13 +421,13 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       value: row.amount,
       description: row.description ?? "",
       supplier: row.supplier ?? "",
-      flat: normalizeFlatValue(row.flat),
+      flat: selectedFlatValues(row.flat),
       preview,
       error: null
     });
 
     try {
-      if (!row.has_invoice_media || !row.invoice_media_name) {
+      if (!row.has_invoice_media) {
         setRecordEditor(createEditor(null));
         return;
       }
@@ -470,13 +486,17 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       return;
     }
 
-    if (!reportForm.startMonth || !reportForm.endMonth) {
+    const isMonthPeriod = reportForm.periodType === "month";
+    const startPeriod = isMonthPeriod ? reportForm.startMonth : reportForm.startDate;
+    const endPeriod = isMonthPeriod ? reportForm.endMonth : reportForm.endDate;
+
+    if (!startPeriod || !endPeriod) {
       setReportError("Please select a report period.");
       return;
     }
 
-    if (reportForm.startMonth > reportForm.endMonth) {
-      setReportError("Start month must be before or equal to end month.");
+    if (startPeriod > endPeriod) {
+      setReportError(`Start ${isMonthPeriod ? "month" : "date"} must be before or equal to end ${isMonthPeriod ? "month" : "date"}.`);
       return;
     }
 
@@ -485,17 +505,19 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       const response = await cashFlowService.sendReport({
         email: reportForm.email.trim(),
         scope,
-        start_month: reportForm.startMonth,
-        end_month: reportForm.endMonth,
-        search: search.trim() || undefined,
-        include_invoice_table: reportForm.includeInvoiceTable
+        ...(isMonthPeriod
+          ? { start_month: reportForm.startMonth, end_month: reportForm.endMonth }
+          : { date_from: reportForm.startDate, date_to: reportForm.endDate }),
+        ...(search.trim() ? { search: search.trim() } : {})
       });
       closeReportModal();
       setReportForm({
         email: "",
+        periodType: "month",
         startMonth: month,
         endMonth: month,
-        includeInvoiceTable: false
+        startDate: toDateInputValue(new Date()),
+        endDate: toDateInputValue(new Date())
       });
       setFeedback({ type: "success", message: response.message });
     } catch (requestError) {
@@ -614,7 +636,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
         recordDate: recordEditor.date,
         description: recordEditor.description.trim() || null,
         supplier: recordEditor.supplier.trim() || null,
-        flat: showFlat ? recordEditor.flat.trim() || null : null
+        flat: showFlat ? serializeFlatValues(recordEditor.flat) || null : null
       };
       await cashFlowService.update(recordEditor.record.id, {
         ...updatePayload,
@@ -728,7 +750,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
               ref={monthInputRef}
               className="oak-input cursor-pointer"
               type={customPeriod ? "text" : "month"}
-              value={customPeriod ? "Customized" : month}
+              value={customPeriod ? "Custom" : month}
               readOnly={Boolean(customPeriod)}
               onClick={handleMonthClick}
               onChange={(event) => {
@@ -984,11 +1006,22 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 {showFlat ? (
                   <label className="grid gap-2">
                     <span className="oak-label">Flat</span>
-                    <input
+                    <select
                       className="oak-input"
+                      multiple
+                      size={FLAT_OPTIONS.length}
                       value={form.flat}
-                      onChange={(event) => setForm((prev) => ({ ...prev, flat: event.target.value }))}
-                    />
+                      onChange={(event) => {
+                        const flat = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
+                        setForm((prev) => ({ ...prev, flat }));
+                      }}
+                    >
+                      {FLAT_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 ) : null}
               </div>
@@ -1143,41 +1176,73 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 </label>
 
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                  <label className="grid gap-2">
-                    <span className="oak-label">Start month</span>
-                    <input
-                      className="oak-input"
-                      type="month"
-                      value={reportForm.startMonth}
-                      onChange={(event) => setReportForm((current) => ({ ...current, startMonth: event.target.value }))}
-                      required
-                    />
-                  </label>
+                  <div className="flex rounded-lg border border-oak-border bg-oak-surface p-1" role="group" aria-label="Report period type">
+                    {(["month", "date"] as const).map((periodType) => (
+                      <button
+                        key={periodType}
+                        className={`flex-1 rounded-md px-3 py-2 text-sm font-bold ${reportForm.periodType === periodType ? "bg-oak-coffee text-white" : "text-oak-coffee"}`}
+                        type="button"
+                        aria-pressed={reportForm.periodType === periodType}
+                        onClick={() => setReportForm((current) => ({ ...current, periodType }))}
+                      >
+                        {periodType === "month" ? "Month" : "Date"}
+                      </button>
+                    ))}
+                  </div>
 
-                  <label className="grid gap-2">
-                    <span className="oak-label">End month</span>
-                    <input
-                      className="oak-input"
-                      type="month"
-                      value={reportForm.endMonth}
-                      onChange={(event) => setReportForm((current) => ({ ...current, endMonth: event.target.value }))}
-                      required
-                    />
-                  </label>
+                  {reportForm.periodType === "month" ? (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="oak-label">Start month</span>
+                        <input
+                          className="oak-input"
+                          type="month"
+                          value={reportForm.startMonth}
+                          onChange={(event) => setReportForm((current) => ({ ...current, startMonth: event.target.value }))}
+                          required
+                        />
+                      </label>
+
+                      <label className="grid gap-2">
+                        <span className="oak-label">End month</span>
+                        <input
+                          className="oak-input"
+                          type="month"
+                          value={reportForm.endMonth}
+                          onChange={(event) => setReportForm((current) => ({ ...current, endMonth: event.target.value }))}
+                          required
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="oak-label">Start date</span>
+                        <input
+                          className="oak-input"
+                          type="date"
+                          value={reportForm.startDate}
+                          onChange={(event) => setReportForm((current) => ({ ...current, startDate: event.target.value }))}
+                          required
+                        />
+                      </label>
+
+                      <label className="grid gap-2">
+                        <span className="oak-label">End date</span>
+                        <input
+                          className="oak-input"
+                          type="date"
+                          value={reportForm.endDate}
+                          onChange={(event) => setReportForm((current) => ({ ...current, endDate: event.target.value }))}
+                          required
+                        />
+                      </label>
+                    </>
+                  )}
                 </div>
 
-                <label className="flex items-center gap-3 rounded-xl border border-oak-border bg-oak-surface p-3 text-sm font-bold text-oak-coffee">
-                  <input
-                    className="size-4 accent-oak-coffee"
-                    type="checkbox"
-                    checked={reportForm.includeInvoiceTable}
-                    onChange={(event) => setReportForm((current) => ({ ...current, includeInvoiceTable: event.target.checked }))}
-                  />
-                  Add invoice table before media pages
-                </label>
-
                 <div className="rounded-xl bg-oak-panel p-4 text-sm font-semibold text-black/60">
-                  Report period: {reportForm.startMonth} to {reportForm.endMonth}
+                  Report period: {reportForm.periodType === "month" ? reportForm.startMonth : reportForm.startDate} to {reportForm.periodType === "month" ? reportForm.endMonth : reportForm.endDate}
                   {search.trim() ? ` | Filter: ${search.trim()}` : ""}
                 </div>
 
@@ -1303,10 +1368,16 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                       <span className="oak-label">Flat</span>
                       <select
                         className="oak-input"
+                        multiple
+                        size={FLAT_OPTIONS.length}
                         value={recordEditor.flat}
-                        onChange={(event) => setRecordEditor((current) => (current ? { ...current, flat: event.target.value, error: null } : current))}
+                        onChange={(event) => {
+                          const flat = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
+                          setRecordEditor((current) => (
+                            current ? { ...current, flat, error: null } : current
+                          ));
+                        }}
                       >
-                        <option value="">Select a flat</option>
                         {FLAT_OPTIONS.map((option) => (
                           <option key={option} value={option}>
                             {option}

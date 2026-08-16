@@ -38,6 +38,80 @@ def test_cleaner_general_access_mobile_moves_in_and_out_of_open_list(client: Tes
     assert open_after_out.json()["data"] == []
 
 
+def test_general_access_cleaner_can_check_in_and_out_of_multiple_flats(client: TestClient) -> None:
+    check_in = client.post(
+        "/api/v1/general-access/cleaner/check-in-batch",
+        json={"name": "Maria Cleaner", "mobile": "62 91234 5678", "building_ids": ["50", "52"]},
+    )
+
+    assert check_in.status_code == 201
+    assert check_in.json()["count"] == 2
+
+    open_response = client.get("/api/v1/general-access/cleaner/open")
+    assert open_response.status_code == 200
+    assert {row["building_name"] for row in open_response.json()["data"]} == {"Flat 50", "Flat 52"}
+
+    check_out = client.post(
+        "/api/v1/general-access/cleaner/check-out",
+        json={"mobile": "62 91234 5678"},
+    )
+
+    assert check_out.status_code == 200
+    assert client.get("/api/v1/general-access/cleaner/open").json()["data"] == []
+
+
+def test_general_access_contractor_can_check_in_to_multiple_flats(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/contractor-access/check-in-batch",
+        json={
+            "name": "Carlos Contractor",
+            "company": "Fix Co",
+            "building_ids": ["50", "51"],
+            "job_description": "Air conditioner maintenance",
+            "mobile": "62 91111 1111",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["count"] == 2
+    open_response = client.get("/api/v1/contractor-access/open")
+    assert {row["flat"] for row in open_response.json()["data"]} == {"50", "51"}
+
+    check_out = client.post(
+        "/api/v1/contractor-access/check-out-batch",
+        json={"mobile": "62 91111 1111"},
+    )
+
+    assert check_out.status_code == 200
+    assert check_out.json()["count"] == 2
+    assert client.get("/api/v1/contractor-access/open").json()["data"] == []
+
+
+def test_manager_can_create_missing_cleaner_in_record_from_an_out_record(client: TestClient) -> None:
+    token = get_admin_token(client, email="cleaner-counterpart-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    check_in = client.post(
+        "/api/v1/general-access/cleaner/check-in",
+        json={"name": "Maria Cleaner", "mobile": "62 98888 0000", "building_id": "50"},
+    )
+    assert check_in.status_code == 201
+    check_out = client.post(
+        "/api/v1/general-access/cleaner/check-out",
+        json={"mobile": "62 98888 0000"},
+    )
+    assert check_out.status_code == 200
+
+    response = client.post(
+        f"/api/v1/acess/{check_out.json()['id']}/counterpart",
+        headers=headers,
+        json={"data": "2026-07-10T10:00:00Z"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["operacao"] == 0
+    assert response.json()["funcionario_id"] == check_out.json()["funcionario_id"]
+
+
 def test_cleaner_checkout_requires_and_stores_flat_checklist(client: TestClient) -> None:
     token = get_admin_token(client, email="cleaner-checklist-admin@example.com")
     headers = {"Authorization": f"Bearer {token}"}

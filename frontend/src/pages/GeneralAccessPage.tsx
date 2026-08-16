@@ -17,7 +17,8 @@ export function GeneralAccessPage() {
   const [operation, setOperation] = useState<Operation>("in");
   const [cleanerOpen, setCleanerOpen] = useState<CleanerOpenAccess[]>([]);
   const [contractorOpen, setContractorOpen] = useState<ContractorVisit[]>([]);
-  const [form, setForm] = useState({ name: "", mobile: "", building_id: "", job_description: "" });
+  const [form, setForm] = useState({ name: "", mobile: "", job_description: "" });
+  const [selectedFlats, setSelectedFlats] = useState<string[]>([]);
   const [selectedMobile, setSelectedMobile] = useState("");
   const [checkoutChecklist, setCheckoutChecklist] = useState<FlatChecklistItem[]>([]);
   const [checkedItemIds, setCheckedItemIds] = useState<string[]>([]);
@@ -49,8 +50,22 @@ export function GeneralAccessPage() {
   }, []);
 
   useEffect(() => {
+    function handleCleanerAccessUpdate(event: StorageEvent) {
+      if (event.key !== "oakhill-cleaner-access-updated") return;
+      setSelectedMobile("");
+      setCheckoutChecklist([]);
+      setCheckedItemIds([]);
+      void loadOpen();
+    }
+
+    window.addEventListener("storage", handleCleanerAccessUpdate);
+    return () => window.removeEventListener("storage", handleCleanerAccessUpdate);
+  }, []);
+
+  useEffect(() => {
     setError(null);
     setSelectedMobile("");
+    setSelectedFlats([]);
     setCheckoutChecklist([]);
     setCheckedItemIds([]);
     if (operation === "out") void loadOpen();
@@ -89,11 +104,15 @@ export function GeneralAccessPage() {
         detail: `${item.building_name} | IN: ${formatDateTime(item.in_at)}`,
       }));
     }
-    return contractorOpen.map((item) => ({
-      id: item.id,
-      mobile: item.mobile,
-      label: `${item.mobile} - ${item.name}`,
-      detail: `Flat ${item.flat} | ${item.job_description} | IN: ${formatDateTime(item.in_at)}`,
+    const visitsByMobile = new Map<string, ContractorVisit[]>();
+    contractorOpen.forEach((visit) => {
+      visitsByMobile.set(visit.mobile, [...(visitsByMobile.get(visit.mobile) ?? []), visit]);
+    });
+    return [...visitsByMobile].map(([mobile, visits]) => ({
+      id: mobile,
+      mobile,
+      label: `${mobile} - ${visits[0].name}`,
+      detail: `${visits.map((visit) => `Flat ${visit.flat}`).join(", ")} | ${visits[0].job_description} | IN: ${formatDateTime(visits[0].in_at)}`,
     }));
   }, [cleanerOpen, contractorOpen, personType]);
 
@@ -104,9 +123,10 @@ export function GeneralAccessPage() {
 
     try {
       if (personType === "cleaner" && operation === "in") {
-        await oakhillService.cleanerCheckIn({ name: form.name, mobile: form.mobile, building_id: form.building_id });
+        await oakhillService.cleanerCheckInMany({ name: form.name, mobile: form.mobile, building_ids: selectedFlats });
         setConfirmed({ mode: "in", label: "Cleaner" });
-        setForm({ name: "", mobile: "", building_id: "", job_description: "" });
+        setForm({ name: "", mobile: "", job_description: "" });
+        setSelectedFlats([]);
       }
 
       if (personType === "cleaner" && operation === "out") {
@@ -115,19 +135,21 @@ export function GeneralAccessPage() {
       }
 
       if (personType === "contractor" && operation === "in") {
-        const response = await oakhillService.contractorCheckIn({
+        const response = await oakhillService.contractorCheckInMany({
           name: form.name,
           company: "Contractor",
-          building_id: form.building_id,
+          building_ids: selectedFlats,
           job_description: form.job_description,
           mobile: form.mobile,
         });
-        setConfirmed({ mode: "in", label: "Contractor", doorCode: response.door_code });
-        setForm({ name: "", mobile: "", building_id: "", job_description: "" });
+        const doorCode = response.data.flatMap((item) => item.door_code ? [`Flat ${item.flat}: ${item.door_code}`] : []).join("\n");
+        setConfirmed({ mode: "in", label: "Contractor", doorCode });
+        setForm({ name: "", mobile: "", job_description: "" });
+        setSelectedFlats([]);
       }
 
       if (personType === "contractor" && operation === "out") {
-        await oakhillService.contractorCheckOut({ visit_id: selectedMobile });
+        await oakhillService.contractorCheckOutMany({ mobile: selectedMobile });
         setConfirmed({ mode: "out", label: "Contractor" });
       }
 
@@ -154,13 +176,17 @@ export function GeneralAccessPage() {
     });
   }
 
+  function toggleFlat(flat: string, checked: boolean) {
+    setSelectedFlats((current) => checked ? [...current, flat] : current.filter((selectedFlat) => selectedFlat !== flat));
+  }
+
   const selectedCleanerCanCheckOut =
     personType === "cleaner" &&
     operation === "out" &&
     selectedMobile &&
     !loadingChecklist &&
     checkoutChecklist.every((item) => checkedItemIds.includes(item.id));
-  const disableSubmit = saving || (personType === "cleaner" && operation === "out" && !selectedCleanerCanCheckOut);
+  const disableSubmit = saving || (operation === "in" && selectedFlats.length === 0) || (personType === "cleaner" && operation === "out" && !selectedCleanerCanCheckOut);
 
   return (
     <main className="min-h-dvh bg-oak-surface p-4">
@@ -197,28 +223,19 @@ export function GeneralAccessPage() {
                 <span className="oak-label">Mobile</span>
                 <input className="oak-input" value={form.mobile} onChange={(event) => setForm((current) => ({ ...current, mobile: event.target.value }))} required />
               </label>
-              {personType === "cleaner" ? (
-                <label className="grid gap-2">
-                  <span className="oak-label">Flat</span>
-                  <select className="oak-input" value={form.building_id} onChange={(event) => setForm((current) => ({ ...current, building_id: event.target.value }))} required>
-                    <option value="">Select flat</option>
-                    {FLATS.map((flat) => (
-                      <option key={flat} value={flat}>Flat {flat}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+              <fieldset className="grid gap-2">
+                <legend className="oak-label">Flats</legend>
+                <div className="grid grid-cols-3 gap-2">
+                  {FLATS.map((flat) => (
+                    <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-oak-border p-3 text-sm font-bold text-oak-coffee" key={flat}>
+                      <input checked={selectedFlats.includes(flat)} className="size-4 accent-oak-taupe" type="checkbox" onChange={(event) => toggleFlat(flat, event.target.checked)} />
+                      Flat {flat}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               {personType === "contractor" ? (
                 <>
-                  <label className="grid gap-2">
-                    <span className="oak-label">Flat</span>
-                    <select className="oak-input" value={form.building_id} onChange={(event) => setForm((current) => ({ ...current, building_id: event.target.value }))} required>
-                      <option value="">Select flat</option>
-                      {FLATS.map((flat) => (
-                        <option key={flat} value={flat}>Flat {flat}</option>
-                      ))}
-                    </select>
-                  </label>
                   <label className="grid gap-2">
                     <span className="oak-label">Job description</span>
                     <input className="oak-input" value={form.job_description} onChange={(event) => setForm((current) => ({ ...current, job_description: event.target.value }))} required />
