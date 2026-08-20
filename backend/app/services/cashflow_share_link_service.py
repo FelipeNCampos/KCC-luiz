@@ -167,6 +167,7 @@ class CashFlowShareLinkService:
             record_date=record.record_date,
             amount=record.amount,
             description=record.description,
+            notes=record.notes,
             supplier=record.supplier,
             flat=record.flat,
             has_invoice=record.has_invoice,

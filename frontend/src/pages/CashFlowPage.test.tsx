@@ -58,6 +58,7 @@ describe("CashFlowPage records", () => {
         record_date: "2026-04-12",
         amount: "75.00",
         description: "Added to the wrong cashflow",
+        notes: "Paid at reception",
         supplier: null,
         flat: "Flat 50",
         balance: "75.00",
@@ -82,7 +83,8 @@ describe("CashFlowPage records", () => {
     expect(await screen.findByRole("heading", { name: "Edit record" })).toBeTruthy();
     expect((screen.getByLabelText("Date") as HTMLInputElement).value).toBe("2026-04-12");
     expect((screen.getByLabelText("Value") as HTMLInputElement).value).toBe("75.00");
-    expect((screen.getByLabelText("Comments") as HTMLTextAreaElement).value).toBe("Added to the wrong cashflow");
+    expect((screen.getByLabelText("Description") as HTMLTextAreaElement).value).toBe("Added to the wrong cashflow");
+    expect((screen.getByLabelText("Notes") as HTMLTextAreaElement).value).toBe("Paid at reception");
     expect(screen.getByRole("button", { name: "Edit invoice media" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Download invoice media" })).toBeTruthy();
 
@@ -146,6 +148,8 @@ describe("CashFlowPage records", () => {
 
     expect(flatSelect.tagName).toBe("SELECT");
     expect(flatSelect.multiple).toBe(true);
+    expect(screen.getByLabelText("Description")).toBeTruthy();
+    expect(screen.getByLabelText("Notes")).toBeTruthy();
   });
 
   it("saves the textual changes made in the row editor", async () => {
@@ -155,7 +159,8 @@ describe("CashFlowPage records", () => {
     await screen.findByRole("heading", { name: "Edit record" });
     fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-04-15" } });
     fireEvent.change(screen.getByLabelText("Value"), { target: { value: "99.50" } });
-    fireEvent.change(screen.getByLabelText("Comments"), { target: { value: "Corrected entry" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Corrected entry" } });
+    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Updated note" } });
     fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "Oak Services" } });
     fireEvent.change(screen.getByLabelText("Flat"), { target: { value: "Flat 51" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -165,6 +170,7 @@ describe("CashFlowPage records", () => {
         recordDate: "2026-04-15",
         value: "99.50",
         description: "Corrected entry",
+        notes: "Updated note",
         supplier: "Oak Services",
         flat: "Flat 51"
       })
@@ -174,7 +180,25 @@ describe("CashFlowPage records", () => {
   it("indicates that search also accepts an amount", () => {
     render(<CashFlowPage />);
 
-    expect(screen.getByPlaceholderText("Search by Description, Supplier, Flat or Amount")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search by Description, Notes, Supplier, Flat or Amount")).toBeTruthy();
+  });
+
+  it("shows Description and Notes columns in both cashflows", async () => {
+    const { rerender } = render(<CashFlowPage />);
+
+    await screen.findByText("Added to the wrong cashflow");
+    expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Notes" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Comments" })).toBeNull();
+    expect(screen.getByText("Paid at reception")).toBeTruthy();
+
+    rerender(<CashFlowPage scope="cashflow52" showFlat={false} />);
+
+    await screen.findByText("Added to the wrong cashflow");
+    expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Notes" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Comments" })).toBeNull();
+    expect(screen.getByPlaceholderText("Search by Description, Notes, Supplier or Amount")).toBeTruthy();
   });
 
   it("shows Yes only when an invoice has attached media", async () => {
@@ -360,7 +384,7 @@ describe("CashFlowPage records", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply period" }));
 
     const monthInput = screen.getByLabelText("Month") as HTMLInputElement;
-    expect(monthInput.value).toBe("Personalizado");
+    expect(monthInput.value).toBe("Custom");
     fireEvent.click(monthInput);
 
     await waitFor(() => expect((screen.getByLabelText("Month") as HTMLInputElement).type).toBe("month"));
@@ -487,7 +511,7 @@ describe("CashFlowPage records", () => {
 
     render(<CashFlowPage />);
 
-    fireEvent.change(screen.getByPlaceholderText("Search by Description, Supplier, Flat or Amount"), {
+    fireEvent.change(screen.getByPlaceholderText("Search by Description, Notes, Supplier, Flat or Amount"), {
       target: { value: "March invoice" }
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "All" }));
@@ -584,13 +608,14 @@ describe("CashFlowPage records", () => {
     await screen.findByRole("heading", { name: "Edit record" });
     expect(screen.queryByLabelText("Value")).toBeNull();
 
-    fireEvent.change(screen.getByLabelText("Comments"), { target: { value: "Corrected cleaning" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Corrected cleaning" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(cashFlowService.update).toHaveBeenCalledWith(42, {
         recordDate: "2026-04-12",
         description: "Corrected cleaning",
+        notes: null,
         supplier: null,
         flat: "Flat 52"
       })

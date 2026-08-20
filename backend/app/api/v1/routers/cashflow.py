@@ -82,7 +82,7 @@ def list_cashflow_records(
     date_from: Annotated[date | None, Query(description="Custom period start date")] = None,
     date_to: Annotated[date | None, Query(description="Custom period end date")] = None,
     search: Annotated[
-        str | None, Query(description="Search by description, supplier, flat or amount")
+        str | None, Query(description="Search by description, notes, supplier, flat or amount")
     ] = None,
     scope: Annotated[str | None, Query(description="Cashflow scope")] = None,
     include_all: Annotated[bool, Query(alias="all", description="Include all records")] = False,
@@ -115,6 +115,7 @@ async def create_cashflow_record(
     record_date: Annotated[str, Form(alias="date")],
     value: Annotated[Decimal, Form(alias="value")],
     description: Annotated[str | None, Form(alias="description")] = None,
+    notes: Annotated[str | None, Form(alias="notes")] = None,
     supplier: Annotated[str | None, Form(alias="supplier")] = None,
     flat: Annotated[str | None, Form(alias="flat")] = None,
     scope: Annotated[str | None, Form(alias="scope")] = None,
@@ -151,6 +152,7 @@ async def create_cashflow_record(
         record_date=record_date,
         value=value,
         description=description,
+        notes=notes,
         supplier=supplier,
         flat=flat,
         scope=scope,
@@ -203,6 +205,7 @@ async def update_system_cashflow_invoice(
     system_invoice_data: Annotated[str, Form(alias="system_invoice_data")],
     invoice_media: Annotated[UploadFile, File(alias="invoice_media")],
     description: Annotated[str | None, Form(alias="description")] = None,
+    notes: Annotated[str | None, Form(alias="notes")] = None,
     supplier: Annotated[str | None, Form(alias="supplier")] = None,
     flat: Annotated[str | None, Form(alias="flat")] = None,
 ) -> CashFlowRow:

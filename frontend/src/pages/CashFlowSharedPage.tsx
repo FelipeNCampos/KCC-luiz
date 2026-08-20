@@ -72,13 +72,13 @@ export function CashFlowSharedPage() {
 
         <section className="oak-card mt-5 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] text-left text-sm">
-              <thead className="bg-oak-panel text-[11px] uppercase text-oak-muted"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Description</th><th className="px-4 py-3">Supplier</th><th className="px-4 py-3">Flat</th><th className="px-4 py-3">Receipt</th></tr></thead>
+            <table className="w-full min-w-[1000px] text-left text-sm">
+              <thead className="bg-oak-panel text-[11px] uppercase text-oak-muted"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Description</th><th className="px-4 py-3">Notes</th><th className="px-4 py-3">Supplier</th><th className="px-4 py-3">Flat</th><th className="px-4 py-3">Receipt</th></tr></thead>
               <tbody className="divide-y divide-oak-border">
-                {data.items.length === 0 ? <tr><td className="px-4 py-6 text-black/60" colSpan={6}>No records for this period.</td></tr> : null}
+                {data.items.length === 0 ? <tr><td className="px-4 py-6 text-black/60" colSpan={7}>No records for this period.</td></tr> : null}
                 {data.items.map((row, index) => (
                   <tr key={`${row.record_date}-${row.description}-${index}`}>
-                    <td className="px-4 py-3">{formatDate(row.record_date)}</td><td className={`px-4 py-3 text-right font-bold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}>{formatCurrency(row.amount)}</td><td className="px-4 py-3">{row.description ?? "-"}</td><td className="px-4 py-3">{row.supplier ?? "-"}</td><td className="px-4 py-3">{row.flat ?? "-"}</td>
+                    <td className="px-4 py-3">{formatDate(row.record_date)}</td><td className={`px-4 py-3 text-right font-bold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}>{formatCurrency(row.amount)}</td><td className="px-4 py-3">{row.description ?? "-"}</td><td className="px-4 py-3">{row.notes ?? "-"}</td><td className="px-4 py-3">{row.supplier ?? "-"}</td><td className="px-4 py-3">{row.flat ?? "-"}</td>
                     <td className="px-4 py-3">{row.invoice_media_url ? (row.invoice_media_mime?.startsWith("image/") ? <a href={cashFlowService.publicUrl(row.invoice_media_url)} target="_blank" rel="noreferrer"><img className="max-h-16 rounded border border-oak-border" src={cashFlowService.publicUrl(row.invoice_media_url)} alt={row.invoice_media_name ?? "Receipt"} /></a> : <a className="font-bold text-oak-coffee underline" href={cashFlowService.publicUrl(row.invoice_media_url)} target="_blank" rel="noreferrer">View receipt</a>) : "-"}</td>
                   </tr>
                 ))}

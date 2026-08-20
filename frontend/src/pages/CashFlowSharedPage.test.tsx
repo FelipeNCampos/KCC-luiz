@@ -28,6 +28,7 @@ describe("CashFlowSharedPage", () => {
         record_date: "2026-04-01",
         amount: "100.00",
         description: "Rent",
+        notes: "Bank transfer",
         supplier: "Tenant",
         flat: "Flat 50",
         has_invoice: true,
@@ -40,7 +41,10 @@ describe("CashFlowSharedPage", () => {
     render(<MemoryRouter initialEntries={["/cash-flow/share/public-token"]}><Routes><Route path="/cash-flow/share/:token" element={<CashFlowSharedPage />} /></Routes></MemoryRouter>);
 
     expect(await screen.findByText("Cashflow records")).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Notes" })).toBeTruthy();
     expect(screen.getByText("Rent")).toBeTruthy();
+    expect(screen.getByText("Bank transfer")).toBeTruthy();
     expect(screen.getByRole("link", { name: "View receipt" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /new record|share link|revoke/i })).toBeNull();
   });

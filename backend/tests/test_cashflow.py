@@ -71,7 +71,7 @@ def get_admin_token(client: TestClient, email: str = "admin@example.com") -> str
 
 def test_cashflow_report_table_wraps_long_cell_text() -> None:
     table = CashFlowService._styled_table(
-        [["Comments"], ["Long maintenance description that must wrap inside its cell."]],
+        [["Description"], ["Long maintenance description that must wrap inside its cell."]],
         [30],
     )
 
@@ -316,6 +316,7 @@ def test_create_record_increment_and_sign_rules(client: TestClient) -> None:
     assert income_response.json()["payment_number"] == 1
     assert income_response.json()["amount"] == "150.00"
     assert income_response.json()["description"] is None
+    assert income_response.json()["notes"] is None
     assert income_response.json()["supplier"] is None
     assert income_response.json()["flat"] is None
 
@@ -343,6 +344,95 @@ def test_create_record_increment_and_sign_rules(client: TestClient) -> None:
     assert body["monthly_total"] == "110.00"
     assert body["current_balance"] == "110.00"
     assert [item["balance"] for item in body["items"]] == ["150.00", "110.00"]
+
+
+def test_cashflow_notes_are_stored_searched_and_shown_in_reports(
+    client: TestClient,
+) -> None:
+    admin_token = get_admin_token(client, email="notes-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    create_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "invoice": "No",
+            "date": "2026-04-12",
+            "value": "75.00",
+            "description": "Monthly service",
+            "notes": "Paid at reception",
+            "supplier": "Oak Services",
+        },
+    )
+    assert create_response.status_code == 201
+    record = create_response.json()
+    assert record["description"] == "Monthly service"
+    assert record["notes"] == "Paid at reception"
+
+    cashflow_52_response = client.post(
+        "/api/v1/cashflow",
+        headers=headers,
+        data={
+            "scope": "cashflow52",
+            "invoice": "No",
+            "date": "2026-04-12",
+            "value": "10.00",
+            "description": "Flat 52 service",
+            "notes": "Porter",
+        },
+    )
+    assert cashflow_52_response.status_code == 201
+    assert cashflow_52_response.json()["notes"] == "Porter"
+
+    listed = client.get("/api/v1/cashflow", headers=headers, params={"month": "2026-04"})
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["notes"] == "Paid at reception"
+
+    notes_search = client.get(
+        "/api/v1/cashflow",
+        headers=headers,
+        params={"month": "2026-04", "search": "reception"},
+    )
+    assert notes_search.status_code == 200
+    assert [item["description"] for item in notes_search.json()["items"]] == [
+        "Monthly service"
+    ]
+
+    update_response = client.patch(
+        f"/api/v1/cashflow/{record['id']}",
+        headers=headers,
+        json={"notes": "Noted"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["notes"] == "Noted"
+
+    preview_response = client.post(
+        "/api/v1/cashflow/report/preview",
+        headers=headers,
+        json={"start_month": "2026-04", "end_month": "2026-04"},
+    )
+    assert preview_response.status_code == 200
+    preview_text = PdfReader(BytesIO(preview_response.content)).pages[0].extract_text()
+    assert "Description" in preview_text
+    assert "Notes" in preview_text
+    assert "Noted" in preview_text
+    assert "Comments" not in preview_text
+
+    cashflow_52_preview = client.post(
+        "/api/v1/cashflow/report/preview",
+        headers=headers,
+        json={
+            "scope": "cashflow52",
+            "start_month": "2026-04",
+            "end_month": "2026-04",
+        },
+    )
+    assert cashflow_52_preview.status_code == 200
+    cashflow_52_text = PdfReader(BytesIO(cashflow_52_preview.content)).pages[0].extract_text()
+    assert "Description" in cashflow_52_text
+    assert "Notes" in cashflow_52_text
+    assert "Porter" in cashflow_52_text
+    assert "Comments" not in cashflow_52_text
 
 
 def test_payment_numbers_are_dynamic_by_record_date(client: TestClient) -> None:
@@ -906,6 +996,7 @@ def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> No
     record = create_response.json()
     assert record["has_invoice"] is False
     assert record["description"] is None
+    assert record["notes"] is None
     assert record["supplier"] is None
     assert record["flat"] is None
 
@@ -915,6 +1006,7 @@ def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> No
         json={
             "value": "125.00",
             "description": "Updated comment",
+            "notes": "Paid at reception",
             "supplier": "Updated supplier",
             "flat": "F505",
         },
@@ -922,6 +1014,7 @@ def test_update_record_comments_flat_and_invoice_media(client: TestClient) -> No
     assert update_response.status_code == 200
     assert update_response.json()["amount"] == "125.00"
     assert update_response.json()["description"] == "Updated comment"
+    assert update_response.json()["notes"] == "Paid at reception"
     assert update_response.json()["supplier"] == "Updated supplier"
     assert update_response.json()["flat"] == "F505"
     assert update_response.json()["balance"] == "125.00"

@@ -21,6 +21,7 @@ type FormState = {
   date: string;
   value: string;
   description: string;
+  notes: string;
   supplier: string;
   flat: string[];
   invoiceMedia: File | null;
@@ -38,6 +39,7 @@ type RecordEditorState = {
   date: string;
   value: string;
   description: string;
+  notes: string;
   supplier: string;
   flat: string[];
   preview: PreviewState | null;
@@ -129,6 +131,7 @@ const initialForm: FormState = {
   date: toDateInputValue(new Date()),
   value: "",
   description: "",
+  notes: "",
   supplier: "",
   flat: [],
   invoiceMedia: null
@@ -176,9 +179,9 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [updatingInvoiceMedia, setUpdatingInvoiceMedia] = useState(false);
   const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
   const [systemInvoiceEditor, setSystemInvoiceEditor] = useState<SystemInvoiceEditorState | null>(null);
-  const tableColumnCount = showFlat ? 8 : 7;
-  const tableMinWidthClass = showFlat ? "min-w-[1000px]" : "min-w-[860px]";
-  const summaryMiddleColumnSpan = showFlat ? 2 : 1;
+  const tableColumnCount = showFlat ? 9 : 8;
+  const tableMinWidthClass = showFlat ? "min-w-[1140px]" : "min-w-[1000px]";
+  const summaryMiddleColumnSpan = showFlat ? 3 : 2;
   const moveTargetScope: CashFlowScope = scope === "main" ? "cashflow52" : "main";
   const moveTargetTitle = scope === "main" ? "Cashflow 52" : "Cashflow penthouse";
 
@@ -362,6 +365,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
         date: form.date,
         value: form.value,
         description: form.description,
+        notes: form.notes,
         supplier: form.supplier,
         flat: showFlat ? serializeFlatValues(form.flat) || undefined : undefined,
         invoiceMedia: form.invoiceMedia
@@ -420,6 +424,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       date: row.record_date,
       value: row.amount,
       description: row.description ?? "",
+      notes: row.notes ?? "",
       supplier: row.supplier ?? "",
       flat: selectedFlatValues(row.flat),
       preview,
@@ -635,6 +640,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       const updatePayload = {
         recordDate: recordEditor.date,
         description: recordEditor.description.trim() || null,
+        notes: recordEditor.notes.trim() || null,
         supplier: recordEditor.supplier.trim() || null,
         flat: showFlat ? serializeFlatValues(recordEditor.flat) || null : null
       };
@@ -765,7 +771,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-oak-taupe" />
             <input
               className="oak-input pl-9"
-              placeholder={showFlat ? "Search by Description, Supplier, Flat or Amount" : "Search by Description, Supplier or Amount"}
+              placeholder={showFlat ? "Search by Description, Notes, Supplier, Flat or Amount" : "Search by Description, Notes, Supplier or Amount"}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -834,7 +840,8 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 <th className="px-4 py-3 font-extrabold">Invoice</th>
                 <th className="px-4 py-3 font-extrabold">Date</th>
                 <th className="px-4 py-3 font-extrabold text-right">Amount</th>
-                <th className="px-4 py-3 font-extrabold">Comments</th>
+                <th className="px-4 py-3 font-extrabold">Description</th>
+                <th className="px-4 py-3 font-extrabold">Notes</th>
                 <th className="px-4 py-3 font-extrabold">Supplier</th>
                 {showFlat ? <th className="px-4 py-3 font-extrabold">Flat</th> : null}
                 <th className="px-4 py-3 font-extrabold text-right">Balance</th>
@@ -887,6 +894,9 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/70">
                           <span className="block max-w-72 truncate">{row.description ?? "—"}</span>
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-black/70">
+                          <span className="block max-w-72 truncate">{row.notes ?? "—"}</span>
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/70">
                           <span className="block max-w-56 truncate">{row.supplier ?? "—"}</span>
@@ -990,6 +1000,15 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                     maxLength={255}
                     value={form.description}
                     onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+                  />
+                </label>
+
+                <label className="grid gap-2">
+                  <span className="oak-label">Notes</span>
+                  <input
+                    className="oak-input"
+                    value={form.notes}
+                    onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
                   />
                 </label>
 
@@ -1344,12 +1363,20 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                   ) : null}
 
                   <label className="grid gap-2">
-                    <span className="oak-label">Comments</span>
+                    <span className="oak-label">Description</span>
                     <textarea
                       className="oak-input min-h-28 resize-y"
-                      maxLength={255}
                       value={recordEditor.description}
                       onChange={(event) => setRecordEditor((current) => (current ? { ...current, description: event.target.value, error: null } : current))}
+                    />
+                  </label>
+
+                  <label className="grid gap-2">
+                    <span className="oak-label">Notes</span>
+                    <textarea
+                      className="oak-input min-h-28 resize-y"
+                      value={recordEditor.notes}
+                      onChange={(event) => setRecordEditor((current) => (current ? { ...current, notes: event.target.value, error: null } : current))}
                     />
                   </label>
 

@@ -12,6 +12,7 @@ class CashFlowCreate(BaseModel):
     record_date: date
     value: Decimal
     description: str | None = None
+    notes: str | None = None
     supplier: str | None = Field(default=None, max_length=255)
     flat: str | None = Field(default=None, max_length=120)
 
@@ -28,6 +29,7 @@ class CashFlowUpdate(BaseModel):
     value: Decimal | None = None
     scope: str | None = None
     description: str | None = None
+    notes: str | None = None
     supplier: str | None = Field(default=None, max_length=255)
     flat: str | None = Field(default=None, max_length=120)
 
@@ -52,6 +54,7 @@ class CashFlowRow(BaseModel):
     record_date: date
     amount: Decimal
     description: str | None
+    notes: str | None
     supplier: str | None
     flat: str | None
     balance: Decimal
@@ -134,6 +137,7 @@ class CashFlowPublicRow(BaseModel):
     record_date: date
     amount: Decimal
     description: str | None
+    notes: str | None
     supplier: str | None
     flat: str | None
     has_invoice: bool

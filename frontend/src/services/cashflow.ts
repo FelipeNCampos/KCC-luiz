@@ -15,6 +15,7 @@ export type CashFlowRow = {
   record_date: string;
   amount: string;
   description: string | null;
+  notes: string | null;
   supplier: string | null;
   flat: string | null;
   balance: string;
@@ -40,6 +41,7 @@ export type CreateCashFlowPayload = {
   date: string;
   value: string;
   description?: string;
+  notes?: string;
   supplier?: string;
   flat?: string;
   invoiceMedia?: File | null;
@@ -52,6 +54,7 @@ export type UpdateCashFlowPayload = {
   scope?: CashFlowScope;
   value?: string | null;
   description?: string | null;
+  notes?: string | null;
   supplier?: string | null;
   flat?: string | null;
 };
@@ -61,6 +64,7 @@ export type UpdateSystemInvoicePayload = {
   date: string;
   value: string;
   description?: string;
+  notes?: string;
   supplier?: string;
   flat?: string;
   invoiceMedia: File;
@@ -95,6 +99,7 @@ export type CashFlowPublicRow = {
   record_date: string;
   amount: string;
   description: string | null;
+  notes: string | null;
   supplier: string | null;
   flat: string | null;
   has_invoice: boolean;
@@ -148,6 +153,10 @@ export const cashFlowService = {
 
     if (payload.description && payload.description.trim()) {
       formData.append("description", payload.description);
+    }
+
+    if (payload.notes && payload.notes.trim()) {
+      formData.append("notes", payload.notes);
     }
 
     if (payload.supplier && payload.supplier.trim()) {
@@ -247,6 +256,9 @@ export const cashFlowService = {
 
     if (payload.description?.trim()) {
       formData.append("description", payload.description);
+    }
+    if (payload.notes?.trim()) {
+      formData.append("notes", payload.notes);
     }
     if (payload.supplier?.trim()) {
       formData.append("supplier", payload.supplier);
