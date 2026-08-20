@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CashFlowPage } from "./CashFlowPage";
@@ -77,7 +77,7 @@ describe("CashFlowPage records", () => {
 
     const recordRow = (await screen.findByText("Added to the wrong cashflow")).closest("tr");
     expect(recordRow).not.toBeNull();
-    expect(recordRow?.querySelector("button")).toBeNull();
+    expect(within(recordRow!).getByRole("button", { name: "View invoice" })).toBeTruthy();
     fireEvent.click(recordRow!);
 
     expect(await screen.findByRole("heading", { name: "Edit record" })).toBeTruthy();
@@ -201,7 +201,7 @@ describe("CashFlowPage records", () => {
     expect(screen.getByPlaceholderText("Search by Description, Notes, Supplier or Amount")).toBeTruthy();
   });
 
-  it("shows Yes only when an invoice has attached media", async () => {
+  it("shows a View invoice control in the invoice column", async () => {
     vi.mocked(cashFlowService.list).mockResolvedValue({
       month: "2026-04",
       monthly_total: "0.00",
@@ -248,8 +248,102 @@ describe("CashFlowPage records", () => {
 
     const noMediaRow = (await screen.findByText("Invoice number only")).closest("tr");
     const mediaRow = screen.getByText("Invoice with media").closest("tr");
-    expect(noMediaRow?.children[1]?.textContent).toBe("No");
-    expect(mediaRow?.children[1]?.textContent).toBe("Yes");
+    expect(within(noMediaRow!).getByRole("button", { name: "View invoice" })).toBeTruthy();
+    expect(within(mediaRow!).getByRole("button", { name: "View invoice" })).toBeTruthy();
+  });
+
+  it("opens the invoice media popup from View without opening the record editor", async () => {
+    vi.mocked(cashFlowService.list).mockResolvedValue({
+      month: "2026-04",
+      monthly_total: "-10.00",
+      current_balance: "-10.00",
+      items: [{
+        id: 13,
+        payment_number: 3,
+        has_invoice: true,
+        has_invoice_media: true,
+        invoice_number: "INV-13",
+        invoice_media_name: "Costco_01-08-2026_£19.18.pdf",
+        system_invoice_type: null,
+        record_date: "2026-04-14",
+        amount: "-19.18",
+        description: "KS Trip satin",
+        supplier: "Costco",
+        flat: null,
+        balance: "825.83",
+        created_by_user_id: 1,
+        created_at: "2026-04-14T12:00:00Z"
+      }]
+    } as never);
+    vi.mocked(cashFlowService.getInvoiceMedia).mockResolvedValue({
+      blob: new Blob(["%PDF-invoice"], { type: "application/pdf" }),
+      contentType: "application/pdf"
+    });
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:invoice-media")
+    });
+
+    render(<CashFlowPage />);
+
+    const row = (await screen.findByText("KS Trip satin")).closest("tr");
+    fireEvent.click(within(row!).getByRole("button", { name: "View invoice" }));
+
+    expect(await screen.findByText("INVOICE MEDIA")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Costco_01-08-2026_£19.18.pdf" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Replace image or PDF" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open in new tab" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Update media" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Edit record" })).toBeNull();
+    expect(cashFlowService.getInvoiceMedia).toHaveBeenCalledWith(13);
+  });
+
+  it("updates invoice media from the dedicated popup after a replacement is selected", async () => {
+    vi.mocked(cashFlowService.list).mockResolvedValue({
+      month: "2026-04",
+      monthly_total: "-10.00",
+      current_balance: "-10.00",
+      items: [{
+        id: 13,
+        payment_number: 3,
+        has_invoice: true,
+        has_invoice_media: true,
+        invoice_number: "INV-13",
+        invoice_media_name: "invoice.pdf",
+        system_invoice_type: null,
+        record_date: "2026-04-14",
+        amount: "-10.00",
+        description: "Invoice with media",
+        supplier: "Costco",
+        flat: null,
+        balance: "65.00",
+        created_by_user_id: 1,
+        created_at: "2026-04-14T12:00:00Z"
+      }]
+    } as never);
+    vi.mocked(cashFlowService.getInvoiceMedia).mockResolvedValue({
+      blob: new Blob(["%PDF-invoice"], { type: "application/pdf" }),
+      contentType: "application/pdf"
+    });
+    vi.mocked(cashFlowService.updateInvoiceMedia).mockResolvedValue({ id: 13 } as never);
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:invoice-media")
+    });
+
+    render(<CashFlowPage />);
+
+    const row = (await screen.findByText("Invoice with media")).closest("tr");
+    fireEvent.click(within(row!).getByRole("button", { name: "View invoice" }));
+
+    const fileInput = await screen.findByLabelText("Select invoice media");
+    const file = new File(["replacement"], "replacement.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "Update media" }));
+
+    await waitFor(() =>
+      expect(cashFlowService.updateInvoiceMedia).toHaveBeenCalledWith(13, { invoiceMedia: file })
+    );
   });
 
   it("loads legacy invoice media even when its filename is missing", async () => {

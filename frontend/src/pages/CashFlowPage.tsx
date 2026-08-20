@@ -52,6 +52,13 @@ type SystemInvoiceEditorState = {
   draft: SystemInvoiceData;
 };
 
+type InvoiceMediaViewerState = {
+  record: CashFlowRow;
+  preview: PreviewState | null;
+  pendingFile: File | null;
+  error: string | null;
+};
+
 type ReportFormState = {
   email: string;
   periodType: "month" | "date";
@@ -141,6 +148,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const monthInputRef = useRef<HTMLInputElement | null>(null);
   const createInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
   const recordInvoiceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const invoiceMediaFileInputRef = useRef<HTMLInputElement | null>(null);
   const recordInvoiceNumberInputRef = useRef<HTMLInputElement | null>(null);
   const recordRowRefs = useRef(new Map<number, HTMLTableRowElement>());
   const [month, setMonth] = useState(toMonthInputValue(new Date()));
@@ -179,6 +187,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [updatingInvoiceMedia, setUpdatingInvoiceMedia] = useState(false);
   const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
   const [systemInvoiceEditor, setSystemInvoiceEditor] = useState<SystemInvoiceEditorState | null>(null);
+  const [invoiceMediaViewer, setInvoiceMediaViewer] = useState<InvoiceMediaViewerState | null>(null);
   const tableColumnCount = showFlat ? 9 : 8;
   const tableMinWidthClass = showFlat ? "min-w-[1140px]" : "min-w-[1000px]";
   const summaryMiddleColumnSpan = showFlat ? 3 : 2;
@@ -265,6 +274,14 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       }
     };
   }, [createInvoicePreview]);
+
+  useEffect(() => {
+    return () => {
+      if (invoiceMediaViewer?.preview) {
+        URL.revokeObjectURL(invoiceMediaViewer.preview.url);
+      }
+    };
+  }, [invoiceMediaViewer?.preview]);
 
   useEffect(() => {
     const isMonthPeriod = reportForm.periodType === "month";
@@ -464,6 +481,102 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
 
     if (pendingRecordFocus) return;
     void handleOpenRecordEditor(row);
+  }
+
+  async function handleOpenInvoiceMediaViewer(row: CashFlowRow) {
+    setFeedback(null);
+    setInvoiceMediaViewer({
+      record: row,
+      preview: null,
+      pendingFile: null,
+      error: null
+    });
+
+    if (!row.has_invoice_media) return;
+
+    try {
+      const media = await cashFlowService.getInvoiceMedia(row.id);
+      const objectUrl = URL.createObjectURL(media.blob);
+      setInvoiceMediaViewer((current) =>
+        current && current.record.id === row.id
+          ? {
+              ...current,
+              preview: {
+                url: objectUrl,
+                contentType: media.contentType ?? "application/octet-stream",
+                fileName: row.invoice_media_name ?? "invoice"
+              }
+            }
+          : current
+      );
+    } catch (requestError) {
+      const axiosError = requestError as AxiosError<{ detail?: string }>;
+      setInvoiceMediaViewer((current) =>
+        current && current.record.id === row.id
+          ? { ...current, error: axiosError.response?.data?.detail ?? "Unable to load invoice media." }
+          : current
+      );
+    }
+  }
+
+  function closeInvoiceMediaViewer() {
+    setInvoiceMediaViewer(null);
+    if (invoiceMediaFileInputRef.current) {
+      invoiceMediaFileInputRef.current.value = "";
+    }
+  }
+
+  function handleInvoiceMediaReplacementSelect(file: File | null) {
+    if (!invoiceMediaViewer || !file) return;
+
+    setInvoiceMediaViewer((current) =>
+      current
+        ? {
+            ...current,
+            pendingFile: file,
+            error: null,
+            preview: {
+              url: URL.createObjectURL(file),
+              contentType: file.type || "application/octet-stream",
+              fileName: file.name
+            }
+          }
+        : current
+    );
+  }
+
+  function handleOpenInvoiceMediaInNewTab() {
+    if (!invoiceMediaViewer?.preview) return;
+    window.open(invoiceMediaViewer.preview.url, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleUpdateInvoiceMediaFromViewer() {
+    if (!invoiceMediaViewer?.pendingFile) return;
+
+    setUpdatingInvoiceMedia(true);
+    try {
+      const updatedRecord = await cashFlowService.updateInvoiceMedia(invoiceMediaViewer.record.id, {
+        invoiceMedia: invoiceMediaViewer.pendingFile
+      });
+      setInvoiceMediaViewer((current) =>
+        current && current.record.id === updatedRecord.id
+          ? { ...current, record: updatedRecord, pendingFile: null, error: null }
+          : current
+      );
+      setFeedback({ type: "success", message: "Invoice media updated successfully." });
+      closeInvoiceMediaViewer();
+      await reload();
+    } catch (requestError) {
+      const axiosError = requestError as AxiosError<{ detail?: string }>;
+      setInvoiceMediaViewer((current) =>
+        current ? { ...current, error: axiosError.response?.data?.detail ?? "Unable to update invoice media." } : current
+      );
+    } finally {
+      setUpdatingInvoiceMedia(false);
+      if (invoiceMediaFileInputRef.current) {
+        invoiceMediaFileInputRef.current.value = "";
+      }
+    }
   }
 
   async function handleOpenSystemInvoiceEditor(row: CashFlowRow) {
@@ -884,7 +997,18 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                       >
                         <td className="px-4 py-3 text-sm font-bold text-oak-coffee">#{row.payment_number}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-oak-coffee">
-                          {row.has_invoice_media ? "Yes" : "No"}
+                          <button
+                            aria-label="View invoice"
+                            className="inline-flex items-center gap-1.5 text-oak-coffee"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleOpenInvoiceMediaViewer(row);
+                            }}
+                          >
+                            <Pencil className="shrink-0 text-[#e67a3a]" size={15} />
+                            <span className="font-extrabold">View</span>
+                          </button>
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
                         <td
@@ -1289,6 +1413,98 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 )}
               </div>
             </form>
+          </article>
+        </div>
+      ) : null}
+
+      {invoiceMediaViewer ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
+          <article className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-oak-border bg-white shadow-oakLg">
+            <header className="flex items-start justify-between gap-4 px-6 pt-5">
+              <div className="min-w-0">
+                <p className="oak-label">INVOICE MEDIA</p>
+                <h2 className="truncate text-xl font-extrabold text-oak-coffee">
+                  {invoiceMediaViewer.preview?.fileName ?? invoiceMediaViewer.record.invoice_media_name ?? "No invoice media"}
+                </h2>
+              </div>
+              <button
+                aria-label="Close invoice media"
+                className="grid size-9 shrink-0 place-items-center rounded-lg border border-oak-border"
+                type="button"
+                onClick={closeInvoiceMediaViewer}
+                disabled={updatingInvoiceMedia}
+              >
+                <X size={17} />
+              </button>
+            </header>
+
+            <div className="px-6 pt-4">
+              <button
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-oak-border bg-oak-panel/40 px-4 py-3 text-sm font-extrabold text-oak-coffee"
+                type="button"
+                onClick={() => invoiceMediaFileInputRef.current?.click()}
+                disabled={updatingInvoiceMedia}
+              >
+                <Upload size={16} />
+                Replace image or PDF
+              </button>
+              <input
+                accept="image/*,application/pdf"
+                aria-label="Select invoice media"
+                className="hidden"
+                ref={invoiceMediaFileInputRef}
+                type="file"
+                onChange={(event) => handleInvoiceMediaReplacementSelect(event.target.files?.[0] ?? null)}
+              />
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto p-6">
+              {invoiceMediaViewer.preview ? (
+                invoiceMediaViewer.preview.contentType.startsWith("image/") ? (
+                  <img
+                    alt="Invoice preview"
+                    className="mx-auto max-h-[58dvh] rounded-lg border border-oak-border bg-white"
+                    src={invoiceMediaViewer.preview.url}
+                  />
+                ) : (
+                  <iframe
+                    className="h-[58dvh] min-h-[420px] w-full rounded-lg border border-oak-border bg-neutral-900"
+                    src={invoiceMediaViewer.preview.url}
+                    title="Invoice preview"
+                  />
+                )
+              ) : (
+                <div className="grid h-full min-h-64 place-items-center rounded-lg border border-dashed border-oak-border bg-oak-panel/40 p-6 text-center text-sm font-semibold text-black/55">
+                  No invoice media is attached to this record.
+                </div>
+              )}
+            </div>
+
+            {invoiceMediaViewer.error ? (
+              <p className="px-6 pb-2 text-sm font-bold text-oak-danger">{invoiceMediaViewer.error}</p>
+            ) : null}
+
+            <footer className="flex flex-wrap justify-end gap-3 border-t border-oak-border px-6 py-4">
+              <button className="oak-button-secondary" type="button" onClick={closeInvoiceMediaViewer} disabled={updatingInvoiceMedia}>
+                Close
+              </button>
+              <button
+                className="oak-button-secondary"
+                type="button"
+                onClick={handleOpenInvoiceMediaInNewTab}
+                disabled={!invoiceMediaViewer.preview}
+              >
+                Open in new tab
+              </button>
+              <button
+                className="oak-button-primary"
+                type="button"
+                onClick={() => void handleUpdateInvoiceMediaFromViewer()}
+                disabled={updatingInvoiceMedia || !invoiceMediaViewer.pendingFile}
+              >
+                {updatingInvoiceMedia ? "Updating..." : "Update media"}
+              </button>
+            </footer>
           </article>
         </div>
       ) : null}

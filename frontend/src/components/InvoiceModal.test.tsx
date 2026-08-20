@@ -90,6 +90,29 @@ describe("invoice cashflow destination", () => {
     );
   });
 
+  it("uses the cleaner bank account name as the cashflow supplier", async () => {
+    render(
+      <InvoiceModal
+        open
+        sourceLabel="Cleaner"
+        defaultDescription="Cleaner service invoice"
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Maria Silva Cleaning" } });
+    completeInvoice();
+    fireEvent.click(screen.getByRole("button", { name: "52" }));
+
+    await waitFor(() =>
+      expect(cashFlowService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          supplier: "Maria Silva Cleaning"
+        })
+      )
+    );
+  });
+
   it("sends a contractor invoice to Cashflow penthouse and keeps download icon-only", async () => {
     render(
       <InvoiceModalContractor
@@ -109,6 +132,29 @@ describe("invoice cashflow destination", () => {
         expect.objectContaining({
           scope: "main",
           invoiceMedia: expect.any(File)
+        })
+      )
+    );
+  });
+
+  it("uses the contractor bank account name as the cashflow supplier", async () => {
+    render(
+      <InvoiceModalContractor
+        open
+        sourceLabel="Contractor"
+        defaultDescription="Contractor service invoice"
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Bank account name"), { target: { value: "Oak Plumbing Ltd" } });
+    completeInvoice();
+    fireEvent.click(screen.getByRole("button", { name: "Penthouse" }));
+
+    await waitFor(() =>
+      expect(cashFlowService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          supplier: "Oak Plumbing Ltd"
         })
       )
     );
@@ -134,6 +180,7 @@ describe("invoice cashflow destination", () => {
       />
     );
 
+    fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Ana Costa" } });
     fireEvent.click(screen.getByRole("button", { name: "Save invoice changes" }));
 
     await waitFor(() =>
@@ -144,6 +191,7 @@ describe("invoice cashflow destination", () => {
           date: "2026-04-10",
           value: "-50.00",
           invoiceNumber: "Inv-0042",
+          supplier: "Ana Costa",
           invoiceMedia: expect.any(File),
         })
       )
@@ -171,6 +219,7 @@ describe("invoice cashflow destination", () => {
       />
     );
 
+    fireEvent.change(screen.getByLabelText("Bank account name"), { target: { value: "Oak Plumbing Ltd" } });
     fireEvent.click(screen.getByRole("button", { name: "Save invoice changes" }));
 
     await waitFor(() =>
@@ -181,6 +230,7 @@ describe("invoice cashflow destination", () => {
           date: "2026-04-10",
           value: "-75.00",
           invoiceNumber: "Inv-0043",
+          supplier: "Oak Plumbing Ltd",
           invoiceMedia: expect.any(File),
         })
       )
