@@ -107,7 +107,7 @@ describe("CashFlowPage records", () => {
     expect(document.activeElement).toBe(invoiceNumber);
   });
 
-  it("allows multiple flats to be selected in the record editor", async () => {
+  it("shows the selected flats as checkboxes in the record editor", async () => {
     vi.mocked(cashFlowService.list).mockResolvedValue({
       month: "2026-04",
       monthly_total: "75.00",
@@ -123,6 +123,7 @@ describe("CashFlowPage records", () => {
         record_date: "2026-04-12",
         amount: "75.00",
         description: "Shared invoice",
+        notes: null,
         supplier: null,
         flat: "Flat 50, Flat 52",
         balance: "75.00",
@@ -134,20 +135,26 @@ describe("CashFlowPage records", () => {
     render(<CashFlowPage />);
 
     fireEvent.click((await screen.findByText("Shared invoice")).closest("tr")!);
-    const flatSelect = await screen.findByLabelText("Flat") as HTMLSelectElement;
+    const flat50 = await screen.findByRole("checkbox", { name: "Flat 50" }) as HTMLInputElement;
+    const flat51 = screen.getByRole("checkbox", { name: "Flat 51" }) as HTMLInputElement;
+    const flat52 = screen.getByRole("checkbox", { name: "Flat 52" }) as HTMLInputElement;
 
-    expect(flatSelect.multiple).toBe(true);
-    expect(Array.from(flatSelect.selectedOptions, (option) => option.value)).toEqual(["Flat 50", "Flat 52"]);
+    expect(flat50.checked).toBe(true);
+    expect(flat51.checked).toBe(false);
+    expect(flat52.checked).toBe(true);
   });
 
-  it("allows multiple flats to be selected when creating a record", async () => {
+  it("allows multiple flats to be selected with checkboxes when creating a record", async () => {
     render(<CashFlowPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "New record" }));
-    const flatSelect = screen.getByLabelText("Flat") as HTMLSelectElement;
+    const flat50 = screen.getByRole("checkbox", { name: "Flat 50" }) as HTMLInputElement;
+    const flat52 = screen.getByRole("checkbox", { name: "Flat 52" }) as HTMLInputElement;
 
-    expect(flatSelect.tagName).toBe("SELECT");
-    expect(flatSelect.multiple).toBe(true);
+    fireEvent.click(flat50);
+    fireEvent.click(flat52);
+    expect(flat50.checked).toBe(true);
+    expect(flat52.checked).toBe(true);
     expect(screen.getByLabelText("Description")).toBeTruthy();
     expect(screen.getByLabelText("Notes")).toBeTruthy();
   });
@@ -162,7 +169,8 @@ describe("CashFlowPage records", () => {
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Corrected entry" } });
     fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Updated note" } });
     fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "Oak Services" } });
-    fireEvent.change(screen.getByLabelText("Flat"), { target: { value: "Flat 51" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Flat 50" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Flat 51" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
@@ -190,7 +198,7 @@ describe("CashFlowPage records", () => {
     expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Notes" })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Comments" })).toBeNull();
-    expect(screen.getByText("Paid at reception")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View notes" })).toBeTruthy();
 
     rerender(<CashFlowPage scope="cashflow52" showFlat={false} />);
 
@@ -199,6 +207,22 @@ describe("CashFlowPage records", () => {
     expect(screen.getByRole("columnheader", { name: "Notes" })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Comments" })).toBeNull();
     expect(screen.getByPlaceholderText("Search by Description, Notes, Supplier or Amount")).toBeTruthy();
+  });
+
+  it("shows notes in a popup without expanding the table row", async () => {
+    render(<CashFlowPage />);
+
+    const row = (await screen.findByText("Added to the wrong cashflow")).closest("tr");
+    expect(within(row!).queryByText("Paid at reception")).toBeNull();
+
+    fireEvent.click(within(row!).getByRole("button", { name: "View notes" }));
+
+    expect(await screen.findByRole("dialog", { name: "Notes" })).toBeTruthy();
+    expect(screen.getByText("Paid at reception")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Edit record" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close notes" }));
+    expect(screen.queryByRole("dialog", { name: "Notes" })).toBeNull();
   });
 
   it("shows a View invoice control in the invoice column", async () => {

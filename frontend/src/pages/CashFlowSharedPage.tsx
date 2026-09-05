@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link2 } from "lucide-react";
+import { Eye, Link2, X } from "lucide-react";
 import { useParams } from "react-router-dom";
 
-import { CashFlowPublicShare, cashFlowService } from "../services/cashflow";
+import { CashFlowPublicRow, CashFlowPublicShare, cashFlowService } from "../services/cashflow";
 
 function formatCurrency(value: string) {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(Number(value));
@@ -17,6 +17,7 @@ export function CashFlowSharedPage() {
   const { token = "" } = useParams();
   const [data, setData] = useState<CashFlowPublicShare | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notesViewer, setNotesViewer] = useState<CashFlowPublicRow | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -39,6 +40,17 @@ export function CashFlowSharedPage() {
       active = false;
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!notesViewer) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNotesViewer(null);
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [notesViewer]);
 
   if (loading) {
     return <main className="grid min-h-dvh place-items-center bg-oak-panel text-sm font-bold text-oak-coffee">Loading shared cashflow...</main>;
@@ -78,14 +90,72 @@ export function CashFlowSharedPage() {
                 {data.items.length === 0 ? <tr><td className="px-4 py-6 text-black/60" colSpan={7}>No records for this period.</td></tr> : null}
                 {data.items.map((row, index) => (
                   <tr key={`${row.record_date}-${row.description}-${index}`}>
-                    <td className="px-4 py-3">{formatDate(row.record_date)}</td><td className={`px-4 py-3 text-right font-bold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}>{formatCurrency(row.amount)}</td><td className="px-4 py-3">{row.description ?? "-"}</td><td className="px-4 py-3">{row.notes ?? "-"}</td><td className="px-4 py-3">{row.supplier ?? "-"}</td><td className="px-4 py-3">{row.flat ?? "-"}</td>
-                    <td className="px-4 py-3">{row.invoice_media_url ? (row.invoice_media_mime?.startsWith("image/") ? <a href={cashFlowService.publicUrl(row.invoice_media_url)} target="_blank" rel="noreferrer"><img className="max-h-16 rounded border border-oak-border" src={cashFlowService.publicUrl(row.invoice_media_url)} alt={row.invoice_media_name ?? "Receipt"} /></a> : <a className="font-bold text-oak-coffee underline" href={cashFlowService.publicUrl(row.invoice_media_url)} target="_blank" rel="noreferrer">View receipt</a>) : "-"}</td>
+                    <td className="px-4 py-3">{formatDate(row.record_date)}</td>
+                    <td className={`px-4 py-3 text-right font-bold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-oak-danger"}`}>{formatCurrency(row.amount)}</td>
+                    <td className="px-4 py-3">{row.description ?? "-"}</td>
+                    <td className="px-4 py-3">
+                      {row.notes?.trim() ? (
+                        <button
+                          aria-label="View notes"
+                          className="inline-flex items-center gap-1.5 whitespace-nowrap font-bold text-oak-coffee"
+                          type="button"
+                          onClick={() => setNotesViewer(row)}
+                        >
+                          <Eye className="shrink-0 text-[#e67a3a]" size={15} />
+                          <span>View</span>
+                        </button>
+                      ) : "-"}
+                    </td>
+                    <td className="px-4 py-3">{row.supplier ?? "-"}</td>
+                    <td className="px-4 py-3">{row.flat ?? "-"}</td>
+                    <td className="px-4 py-3">
+                      {row.invoice_media_url ? (
+                        row.invoice_media_mime?.startsWith("image/") ? (
+                          <a href={cashFlowService.publicUrl(row.invoice_media_url)} target="_blank" rel="noreferrer">
+                            <img className="max-h-16 rounded border border-oak-border" src={cashFlowService.publicUrl(row.invoice_media_url)} alt={row.invoice_media_name ?? "Receipt"} />
+                          </a>
+                        ) : (
+                          <a className="font-bold text-oak-coffee underline" href={cashFlowService.publicUrl(row.invoice_media_url)} target="_blank" rel="noreferrer">View receipt</a>
+                        )
+                      ) : "-"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </section>
+
+        {notesViewer ? (
+          <div className="fixed inset-0 z-30 grid place-items-center bg-black/50 p-4">
+            <article
+              aria-labelledby="shared-cashflow-notes-title"
+              aria-modal="true"
+              className="w-full max-w-xl rounded-2xl border border-oak-border bg-white shadow-oakLg"
+              role="dialog"
+            >
+              <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
+                <h2 id="shared-cashflow-notes-title" className="text-lg font-extrabold text-oak-coffee">Notes</h2>
+                <button
+                  aria-label="Close notes"
+                  className="grid size-9 place-items-center rounded-lg border border-oak-border"
+                  type="button"
+                  onClick={() => setNotesViewer(null)}
+                >
+                  <X size={17} />
+                </button>
+              </header>
+              <p className="max-h-[60dvh] overflow-y-auto whitespace-pre-wrap break-words px-6 py-5 text-sm font-semibold leading-6 text-black/70">
+                {notesViewer.notes}
+              </p>
+              <footer className="flex justify-end border-t border-oak-border px-6 py-4">
+                <button className="oak-button-secondary" type="button" onClick={() => setNotesViewer(null)}>
+                  Close
+                </button>
+              </footer>
+            </article>
+          </div>
+        ) : null}
       </section>
     </main>
   );

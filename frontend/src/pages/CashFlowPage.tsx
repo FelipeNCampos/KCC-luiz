@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AxiosError } from "axios";
-import { CircleDollarSign, Download, FileSpreadsheet, Pencil, Search, Trash2, Upload, X } from "lucide-react";
+import { CircleDollarSign, Download, Eye, FileSpreadsheet, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
 import { CashFlowShareLinksPanel } from "../components/CashFlowShareLinksPanel";
@@ -132,6 +132,34 @@ function serializeFlatValues(values: string[]) {
   return values.join(", ");
 }
 
+type FlatCheckboxesProps = {
+  value: string[];
+  onChange: (value: string[]) => void;
+};
+
+function FlatCheckboxes({ value, onChange }: FlatCheckboxesProps) {
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="oak-label">Flat</legend>
+      <div className="flex flex-wrap gap-3 rounded-xl border border-oak-border bg-oak-panel/40 p-3">
+        {FLAT_OPTIONS.map((option) => (
+          <label key={option} className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-oak-coffee">
+            <input
+              checked={value.includes(option)}
+              className="size-4 accent-oak-coffee"
+              type="checkbox"
+              onChange={(event) => {
+                onChange(event.target.checked ? [...value, option] : value.filter((selected) => selected !== option));
+              }}
+            />
+            {option}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 const initialForm: FormState = {
   invoice: "No",
   invoiceNumber: "",
@@ -188,6 +216,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
   const [createInvoicePreview, setCreateInvoicePreview] = useState<PreviewState | null>(null);
   const [systemInvoiceEditor, setSystemInvoiceEditor] = useState<SystemInvoiceEditorState | null>(null);
   const [invoiceMediaViewer, setInvoiceMediaViewer] = useState<InvoiceMediaViewerState | null>(null);
+  const [notesViewer, setNotesViewer] = useState<CashFlowRow | null>(null);
   const tableColumnCount = showFlat ? 9 : 8;
   const tableMinWidthClass = showFlat ? "min-w-[1140px]" : "min-w-[1000px]";
   const summaryMiddleColumnSpan = showFlat ? 3 : 2;
@@ -252,6 +281,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
       setIsCreateOpen(false);
       setIsReportOpen(false);
       setIsCustomPeriodOpen(false);
+      setNotesViewer(null);
       closeRecordEditor();
     };
 
@@ -1020,7 +1050,20 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                           <span className="block max-w-72 truncate">{row.description ?? "—"}</span>
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/70">
-                          <span className="block max-w-72 truncate">{row.notes ?? "—"}</span>
+                          {row.notes?.trim() ? (
+                            <button
+                              aria-label="View notes"
+                              className="inline-flex items-center gap-1.5 whitespace-nowrap text-oak-coffee"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setNotesViewer(row);
+                              }}
+                            >
+                              <Eye className="shrink-0 text-[#e67a3a]" size={15} />
+                              <span className="font-extrabold">View</span>
+                            </button>
+                          ) : "—"}
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-black/70">
                           <span className="block max-w-56 truncate">{row.supplier ?? "—"}</span>
@@ -1147,25 +1190,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                 </label>
 
                 {showFlat ? (
-                  <label className="grid gap-2">
-                    <span className="oak-label">Flat</span>
-                    <select
-                      className="oak-input"
-                      multiple
-                      size={FLAT_OPTIONS.length}
-                      value={form.flat}
-                      onChange={(event) => {
-                        const flat = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
-                        setForm((prev) => ({ ...prev, flat }));
-                      }}
-                    >
-                      {FLAT_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <FlatCheckboxes value={form.flat} onChange={(flat) => setForm((prev) => ({ ...prev, flat }))} />
                 ) : null}
               </div>
 
@@ -1417,6 +1442,40 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
         </div>
       ) : null}
 
+      {notesViewer ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
+          <article
+            aria-labelledby="cashflow-notes-title"
+            aria-modal="true"
+            className="w-full max-w-xl rounded-2xl border border-oak-border bg-white shadow-oakLg"
+            role="dialog"
+          >
+            <header className="flex items-center justify-between border-b border-oak-border px-6 py-4">
+              <div>
+                <p className="oak-label">Cashflow record #{notesViewer.payment_number}</p>
+                <h2 id="cashflow-notes-title" className="text-lg font-extrabold text-oak-coffee">Notes</h2>
+              </div>
+              <button
+                aria-label="Close notes"
+                className="grid size-9 place-items-center rounded-lg border border-oak-border"
+                type="button"
+                onClick={() => setNotesViewer(null)}
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <p className="max-h-[60dvh] overflow-y-auto whitespace-pre-wrap break-words px-6 py-5 text-sm font-semibold leading-6 text-black/70">
+              {notesViewer.notes}
+            </p>
+            <footer className="flex justify-end border-t border-oak-border px-6 py-4">
+              <button className="oak-button-secondary" type="button" onClick={() => setNotesViewer(null)}>
+                Close
+              </button>
+            </footer>
+          </article>
+        </div>
+      ) : null}
+
       {invoiceMediaViewer ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
           <article className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-oak-border bg-white shadow-oakLg">
@@ -1607,27 +1666,12 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                   </label>
 
                   {showFlat ? (
-                    <label className="grid gap-2">
-                      <span className="oak-label">Flat</span>
-                      <select
-                        className="oak-input"
-                        multiple
-                        size={FLAT_OPTIONS.length}
-                        value={recordEditor.flat}
-                        onChange={(event) => {
-                          const flat = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
-                          setRecordEditor((current) => (
-                            current ? { ...current, flat, error: null } : current
-                          ));
-                        }}
-                      >
-                        {FLAT_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <FlatCheckboxes
+                      value={recordEditor.flat}
+                      onChange={(flat) => setRecordEditor((current) => (
+                        current ? { ...current, flat, error: null } : current
+                      ))}
+                    />
                   ) : null}
 
                   {recordEditor.error ? <p className="text-sm font-bold text-oak-danger">{recordEditor.error}</p> : null}

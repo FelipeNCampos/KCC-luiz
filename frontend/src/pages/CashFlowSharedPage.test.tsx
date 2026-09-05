@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -44,9 +44,13 @@ describe("CashFlowSharedPage", () => {
     expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Notes" })).toBeTruthy();
     expect(screen.getByText("Rent")).toBeTruthy();
-    expect(screen.getByText("Bank transfer")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View notes" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "View receipt" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /new record|share link|revoke/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "View notes" }));
+    expect(await screen.findByRole("dialog", { name: "Notes" })).toBeTruthy();
+    expect(screen.getByText("Bank transfer")).toBeTruthy();
   });
 
   it("shows a neutral unavailable screen for an invalid link", async () => {

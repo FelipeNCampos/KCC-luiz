@@ -3,10 +3,12 @@ from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from io import BytesIO
 
+import pymupdf
 import pytest
 from conftest import TestingSessionLocal
 from fastapi.testclient import TestClient
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import RectangleObject
 from reportlab.lib.pagesizes import A5
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph
@@ -23,6 +25,26 @@ def make_invoice_pdf(text: str = "Invoice") -> bytes:
     pdf.drawString(40, 200, text)
     pdf.showPage()
     pdf.save()
+    return output.getvalue()
+
+
+def make_cropped_invoice_pdf() -> bytes:
+    source = BytesIO()
+    pdf = canvas.Canvas(source, pagesize=A5)
+    pdf.setFillColorRGB(0, 1, 0)
+    pdf.rect(80, 200, 160, 80, fill=1, stroke=0)
+    pdf.setFillColorRGB(0, 0, 1)
+    pdf.rect(80, 20, 160, 50, fill=1, stroke=0)
+    pdf.showPage()
+    pdf.save()
+
+    reader = PdfReader(BytesIO(source.getvalue()))
+    page = reader.pages[0]
+    page.cropbox = RectangleObject((0, 100, page.mediabox.width, page.mediabox.height))
+    output = BytesIO()
+    writer = PdfWriter()
+    writer.add_page(page)
+    writer.write(output)
     return output.getvalue()
 
 
@@ -80,6 +102,29 @@ def test_cashflow_report_table_wraps_long_cell_text() -> None:
     table.wrap(30, 400)
 
     assert table._rowHeights[1] > 18
+
+
+def test_report_invoice_rendering_respects_the_original_pdf_cropbox() -> None:
+    writer = PdfWriter()
+
+    CashFlowService._append_media_pages(
+        writer,
+        make_cropped_invoice_pdf(),
+        "application/pdf",
+        "Invoice No #18",
+    )
+
+    output = BytesIO()
+    writer.write(output)
+    document = pymupdf.open(stream=output.getvalue(), filetype="pdf")
+    try:
+        samples = bytes(document[0].get_pixmap(colorspace=pymupdf.csRGB, alpha=False).samples)
+    finally:
+        document.close()
+
+    pixels = {samples[index : index + 3] for index in range(0, len(samples), 3)}
+    assert b"\x00\xff\x00" in pixels
+    assert b"\x00\x00\xff" not in pixels
 
 
 def test_cashflow_share_link_exposes_current_inclusive_period_and_invoice(
@@ -1268,4 +1313,6 @@ def test_send_cashflow_report(client: TestClient, monkeypatch: pytest.MonkeyPatc
     assert "invoice.pdf" in first_page_text
 
     second_page_text = reader.pages[1].extract_text()
-    assert "Invoice: INV-APR-2026" in second_page_text
+    assert "Invoice No #1" in second_page_text
+    assert "Invoice: INV-APR-2026" not in second_page_text
+    assert "Monthly fee invoice" not in second_page_text

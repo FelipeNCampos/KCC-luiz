@@ -4,11 +4,9 @@ from decimal import Decimal
 from io import BytesIO
 from xml.sax.saxutils import escape
 
+import pymupdf
 from fastapi import HTTPException, status
-from pypdf import PdfReader, PdfWriter, Transformation
-from pypdf._page import PageObject
-from pypdf.errors import PdfReadError
-from pypdf.generic import RectangleObject
+from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -27,6 +25,8 @@ from app.schemas.cashflow import (
     CashFlowUpdate,
 )
 from app.services.email_service import EmailService
+
+PDF_INVOICE_RENDER_DPI = 200
 
 
 class CashFlowService:
@@ -518,7 +518,7 @@ class CashFlowService:
                 writer,
                 record.invoice_media_data,
                 record.invoice_media_mime,
-                self._report_invoice_label(record.invoice_number, item.payment_number),
+                self._report_invoice_label(item.payment_number),
             )
 
         output = BytesIO()
@@ -745,11 +745,9 @@ class CashFlowService:
     ) -> None:
         if mime_type == "application/pdf":
             try:
-                reader = PdfReader(BytesIO(data))
-                for page in reader.pages:
-                    writer.add_page(CashFlowService._center_pdf_page(page, invoice_label))
+                CashFlowService._append_rasterized_pdf_pages(writer, data, invoice_label)
                 return
-            except (PdfReadError, ValueError, TypeError):
+            except (RuntimeError, ValueError, OSError):
                 pass
 
         if mime_type.startswith("image/"):
@@ -769,24 +767,36 @@ class CashFlowService:
             writer.add_page(page)
 
     @staticmethod
-    def _center_pdf_page(source_page: PageObject, invoice_label: str) -> PageObject:
-        page_width, page_height = A4
-        target_page = PageObject.create_blank_page(width=page_width, height=page_height)
-        media_box = source_page.mediabox
-        source_width = float(media_box.width)
-        source_height = float(media_box.height)
-        if source_width <= 0 or source_height <= 0:
-            target_page.merge_page(CashFlowService._invoice_header_page(invoice_label))
-            return target_page
-        content_x, content_y, content_width, content_height = CashFlowService._media_content_box()
-        scale = min(content_width / source_width, content_height / source_height)
-        x_offset = content_x + (content_width - source_width * scale) / 2
-        y_offset = content_y + (content_height - source_height * scale) / 2
-        source_page.cropbox = RectangleObject(media_box)
-        transformation = Transformation().scale(scale).translate(x_offset, y_offset)
-        target_page.merge_transformed_page(source_page, transformation)
-        target_page.merge_page(CashFlowService._invoice_header_page(invoice_label))
-        return target_page
+    def _append_rasterized_pdf_pages(
+        writer: PdfWriter,
+        data: bytes,
+        invoice_label: str,
+    ) -> None:
+        """Render external PDF pages before adding them to a report.
+
+        Merging arbitrary third-party PDF drawing instructions can corrupt complex
+        fonts or layers. A rendered image preserves the page's visual result and
+        makes the final report safe to print.
+        """
+        document = pymupdf.open(stream=data, filetype="pdf")
+        try:
+            if document.page_count == 0:
+                raise ValueError("Invoice PDF has no pages")
+
+            for source_page in document:
+                pixmap = source_page.get_pixmap(
+                    dpi=PDF_INVOICE_RENDER_DPI,
+                    colorspace=pymupdf.csRGB,
+                    alpha=False,
+                )
+                page_pdf = CashFlowService._image_to_centered_pdf_page(
+                    pixmap.tobytes("png"),
+                    invoice_label,
+                )
+                for page in PdfReader(BytesIO(page_pdf)).pages:
+                    writer.add_page(page)
+        finally:
+            document.close()
 
     @staticmethod
     def _image_to_centered_pdf_page(data: bytes, invoice_label: str) -> bytes:
@@ -830,16 +840,6 @@ class CashFlowService:
         return output.getvalue()
 
     @staticmethod
-    def _invoice_header_page(invoice_label: str) -> PageObject:
-        overlay_pdf = BytesIO()
-        page_width, page_height = A4
-        pdf = canvas.Canvas(overlay_pdf, pagesize=A4)
-        CashFlowService._draw_invoice_header(pdf, page_width, page_height, invoice_label)
-        pdf.showPage()
-        pdf.save()
-        return PdfReader(BytesIO(overlay_pdf.getvalue())).pages[0]
-
-    @staticmethod
     def _draw_invoice_header(
         pdf: canvas.Canvas,
         page_width: float,
@@ -865,8 +865,9 @@ class CashFlowService:
         )
 
     @staticmethod
-    def _report_invoice_label(invoice_number: str | None, payment_number: int) -> str:
-        return f"Invoice: {invoice_number}" if invoice_number else f"Invoice No #{payment_number}"
+    def _report_invoice_label(payment_number: int) -> str:
+        """Return the report row number used to identify an attached invoice."""
+        return f"Invoice No #{payment_number}"
 
     @staticmethod
     def _format_money(value: Decimal) -> str:
