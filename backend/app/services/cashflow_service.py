@@ -587,7 +587,7 @@ class CashFlowService:
             )
             if len(rows) == 1:
                 rows.append(["-", "-", "-", "-", "No records for this period.", "-", "-", "-", "-"])
-            record_widths = [14 * mm, 14 * mm, 22 * mm, 20 * mm, 38 * mm, 18 * mm, 22 * mm, 14 * mm, 20 * mm]
+            record_widths = [14 * mm, 14 * mm, 22 * mm, 20 * mm, 30 * mm, 16 * mm, 20 * mm, 12 * mm, 34 * mm]
         else:
             rows = [["Invoice No", "Invoice", "Date", "Amount", "Description", "Notes", "Supplier", "Balance"]]
             rows.extend(
@@ -607,7 +607,7 @@ class CashFlowService:
             )
             if len(rows) == 1:
                 rows.append(["-", "-", "-", "-", "No records for this period.", "-", "-", "-"])
-            record_widths = [16 * mm, 16 * mm, 22 * mm, 20 * mm, 40 * mm, 22 * mm, 26 * mm, 20 * mm]
+            record_widths = [16 * mm, 16 * mm, 22 * mm, 20 * mm, 32 * mm, 16 * mm, 26 * mm, 34 * mm]
         story.append(
             CashFlowService._styled_table(
                 rows,
