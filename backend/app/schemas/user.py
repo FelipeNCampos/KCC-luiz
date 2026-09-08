@@ -13,6 +13,11 @@ class UserCreate(BaseModel):
     job_title: str | None = Field(default=None, max_length=120)
 
 
+class UserAdminCreate(UserCreate):
+    role: UserRole = "user"
+    is_active: bool = True
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

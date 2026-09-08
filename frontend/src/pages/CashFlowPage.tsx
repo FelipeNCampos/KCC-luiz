@@ -1677,7 +1677,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                   {recordEditor.error ? <p className="text-sm font-bold text-oak-danger">{recordEditor.error}</p> : null}
                 </div>
 
-                <footer className="mt-auto flex flex-nowrap items-center gap-3 overflow-x-auto border-t border-oak-border pt-5">
+              <footer className="mt-auto flex min-w-0 flex-wrap items-center gap-3 border-t border-oak-border pt-5">
                   <button
                     aria-label="Delete record"
                     className="oak-button-secondary grid shrink-0 !size-10 !min-h-10 !p-0 !text-oak-danger"
@@ -1696,7 +1696,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                   >
                     Move to {moveTargetTitle}
                   </button>
-                  <div className="ml-auto flex shrink-0 gap-3">
+                <div className="ml-auto flex flex-wrap gap-3 sm:justify-end">
                     <button className="oak-button-secondary" type="button" onClick={closeRecordEditor} disabled={savingRecord}>
                       Cancel
                     </button>

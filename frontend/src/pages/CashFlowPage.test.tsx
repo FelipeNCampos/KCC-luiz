@@ -93,7 +93,8 @@ describe("CashFlowPage records", () => {
 
     const deleteButton = screen.getByRole("button", { name: "Delete record" });
     expect(deleteButton.textContent).toBe("");
-    expect(textColumnFooter?.className).toContain("flex-nowrap");
+    expect(textColumnFooter?.className).toContain("flex-wrap");
+    expect(textColumnFooter?.className).not.toContain("overflow-x-auto");
     expect(textColumnFooter?.querySelector("button")).toBe(deleteButton);
   });
 

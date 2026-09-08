@@ -13,6 +13,15 @@ export type UserAdminUpdatePayload = {
   is_active?: boolean;
 };
 
+export type UserAdminCreatePayload = {
+  name: string;
+  email: string;
+  password: string;
+  role: SystemUserRole;
+  job_title?: string | null;
+  is_active?: boolean;
+};
+
 export const usersService = {
   async listUsers() {
     const { data } = await api.get<SystemUser[]>("/users");
@@ -21,6 +30,11 @@ export const usersService = {
 
   async updateUser(userId: number, payload: UserAdminUpdatePayload) {
     const { data } = await api.patch<SystemUser>(`/users/${userId}`, payload);
+    return data;
+  },
+
+  async createUser(payload: UserAdminCreatePayload) {
+    const { data } = await api.post<SystemUser>("/users", payload);
     return data;
   }
 };

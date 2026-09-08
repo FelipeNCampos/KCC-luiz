@@ -1,22 +1,40 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { AxiosError } from "axios";
-import { Check, Search, ShieldCheck, UsersRound } from "lucide-react";
+import { Check, Plus, Search, ShieldCheck, UsersRound, X } from "lucide-react";
 
 import { DashboardShell } from "../components/DashboardShell";
 import { useAuth } from "../hooks/useAuth";
 import { SystemUser, SystemUserRole, usersService } from "../services/users";
 
-const roleOptions: Array<{ value: SystemUserRole; label: string; description: string }> = [
-  { value: "admin", label: "Admin", description: "Full access" },
-  { value: "manager", label: "Manager", description: "Cashflow access" },
-  { value: "employee", label: "Employee", description: "Tasks access" },
-  { value: "user", label: "User", description: "Overview access" }
+const roleOptions: Array<{ value: SystemUserRole; label: string; description: string; access: string }> = [
+  { value: "admin", label: "Admin", description: "Full access", access: "All modules and user management" },
+  { value: "manager", label: "Manager", description: "Financial and operational access", access: "Overview, cashflow, and operations" },
+  { value: "employee", label: "Employee", description: "Tasks access", access: "Assigned tasks" },
+  { value: "user", label: "User", description: "Overview access", access: "Overview only" }
 ];
 
 type UserDraft = {
   role: SystemUserRole;
   jobTitle: string;
   isActive: boolean;
+};
+
+type CreateUserDraft = {
+  name: string;
+  email: string;
+  password: string;
+  role: SystemUserRole;
+  jobTitle: string;
+  isActive: boolean;
+};
+
+const initialCreateDraft: CreateUserDraft = {
+  name: "",
+  email: "",
+  password: "",
+  role: "user",
+  jobTitle: "",
+  isActive: true
 };
 
 function normalizeRole(role: string): SystemUserRole {
@@ -43,6 +61,9 @@ export function UsersPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createDraft, setCreateDraft] = useState<CreateUserDraft>(initialCreateDraft);
+  const [isCreating, setIsCreating] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
@@ -125,6 +146,40 @@ export function UsersPage() {
     }
   }
 
+  function openCreateUser() {
+    setCreateDraft(initialCreateDraft);
+    setFeedback(null);
+    setIsCreateOpen(true);
+  }
+
+  async function createUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsCreating(true);
+    setFeedback(null);
+
+    try {
+      const created = await usersService.createUser({
+        name: createDraft.name.trim(),
+        email: createDraft.email.trim(),
+        password: createDraft.password,
+        role: createDraft.role,
+        job_title: createDraft.jobTitle.trim() || null,
+        is_active: createDraft.isActive
+      });
+      setUsers((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setDrafts((current) => ({ ...current, [created.id]: toDraft(created) }));
+      setIsCreateOpen(false);
+      setFeedback({ type: "success", message: `${created.name} created with ${formatRole(created.role)} access.` });
+    } catch (error) {
+      const requestError = error as AxiosError<{ detail?: string }>;
+      setFeedback({ type: "error", message: requestError.response?.data?.detail ?? "Unable to create user." });
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  const selectedRole = roleOptions.find((option) => option.value === createDraft.role) ?? roleOptions[3];
+
   return (
     <DashboardShell title="Users" subtitle="Edit system access and roles">
       <section className="grid gap-4 lg:grid-cols-[1.4fr_0.6fr]">
@@ -137,18 +192,24 @@ export function UsersPage() {
                 Change a user between admin, manager, employee, and regular access.
               </p>
             </div>
-            <label className="grid min-w-0 gap-2 md:w-80">
-              <span className="oak-label">Search</span>
-              <span className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-oak-taupe" size={17} />
-                <input
-                  className="oak-input pl-10"
-                  value={query}
-                  placeholder="Name, email, role"
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </span>
-            </label>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="grid min-w-0 gap-2 md:w-80">
+                <span className="oak-label">Search</span>
+                <span className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-oak-taupe" size={17} />
+                  <input
+                    className="oak-input pl-10"
+                    value={query}
+                    placeholder="Name, email, role"
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                </span>
+              </label>
+              <button className="oak-button-primary" type="button" onClick={openCreateUser}>
+                <Plus size={17} />
+                Add user
+              </button>
+            </div>
           </div>
         </div>
 
@@ -177,6 +238,67 @@ export function UsersPage() {
         <section className={`tasks-alert ${feedback.type === "success" ? "tasks-alert-success" : "tasks-alert-error"}`}>
           {feedback.message}
         </section>
+      ) : null}
+
+      {isCreateOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="presentation" onMouseDown={() => !isCreating && setIsCreateOpen(false)}>
+          <form
+            className="w-full max-w-2xl rounded-2xl border border-oak-border bg-white p-6 shadow-oakLg"
+            aria-labelledby="create-user-title"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={(event) => void createUser(event)}
+          >
+            <div className="flex items-start justify-between gap-5">
+              <div>
+                <p className="oak-label">New account</p>
+                <h2 id="create-user-title" className="mt-2 text-xl font-extrabold text-oak-coffee">Create user</h2>
+                <p className="mt-1 text-sm font-semibold text-black/55">Choose the access profile before sending the account details.</p>
+              </div>
+              <button className="grid size-10 place-items-center rounded-lg text-oak-taupe hover:bg-oak-panel" type="button" aria-label="Close" disabled={isCreating} onClick={() => setIsCreateOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 sm:col-span-2">
+                <span className="oak-label">Full name</span>
+                <input className="oak-input" required minLength={2} value={createDraft.name} placeholder="User name" onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} />
+              </label>
+              <label className="grid gap-2">
+                <span className="oak-label">Email</span>
+                <input className="oak-input" required type="email" value={createDraft.email} placeholder="name@example.com" onChange={(event) => setCreateDraft((current) => ({ ...current, email: event.target.value }))} />
+              </label>
+              <label className="grid gap-2">
+                <span className="oak-label">Password</span>
+                <input className="oak-input" required minLength={8} type="password" value={createDraft.password} placeholder="At least 8 characters" onChange={(event) => setCreateDraft((current) => ({ ...current, password: event.target.value }))} />
+              </label>
+              <label className="grid gap-2">
+                <span className="oak-label">Access profile</span>
+                <select className="oak-input" value={createDraft.role} onChange={(event) => setCreateDraft((current) => ({ ...current, role: event.target.value as SystemUserRole }))}>
+                  {roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label} — {option.description}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-2">
+                <span className="oak-label">Job title</span>
+                <input className="oak-input" value={createDraft.jobTitle} placeholder="Optional" onChange={(event) => setCreateDraft((current) => ({ ...current, jobTitle: event.target.value }))} />
+              </label>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-oak-border bg-oak-panel p-4">
+              <p className="oak-label">Selected access</p>
+              <p className="mt-1 font-extrabold text-oak-coffee">{selectedRole.label}: {selectedRole.access}</p>
+            </div>
+            <label className="mt-4 flex min-h-11 items-center gap-3 rounded-lg border border-oak-border px-3.5 text-sm font-bold text-oak-coffee">
+              <input type="checkbox" checked={createDraft.isActive} onChange={(event) => setCreateDraft((current) => ({ ...current, isActive: event.target.checked }))} />
+              Activate account immediately
+            </label>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button className="oak-button-secondary" type="button" disabled={isCreating} onClick={() => setIsCreateOpen(false)}>Cancel</button>
+              <button className="oak-button-primary" type="submit" disabled={isCreating}>{isCreating ? "Creating..." : "Create user"}<Plus size={16} /></button>
+            </div>
+          </form>
+        </div>
       ) : null}
 
       <section className="oak-card overflow-hidden">

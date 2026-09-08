@@ -24,12 +24,19 @@ class UserRepository:
         statement = select(User).where(User.role == role).order_by(User.name.asc(), User.id.asc())
         return list(self.db.scalars(statement).all())
 
-    def create(self, user_in: UserCreate, password_hash: str, role: str = "user") -> User:
+    def create(
+        self,
+        user_in: UserCreate,
+        password_hash: str,
+        role: str = "user",
+        is_active: bool = True,
+    ) -> User:
         user = User(
             name=user_in.name.strip(),
             email=user_in.email.lower(),
             password_hash=password_hash,
             role=role,
+            is_active=is_active,
             job_title=user_in.job_title.strip() if user_in.job_title else None,
         )
         self.db.add(user)

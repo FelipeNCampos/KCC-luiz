@@ -8,7 +8,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import EmployeeCreate, EmployeeUpdate, UserAdminUpdate, UserRead
+from app.schemas.user import EmployeeCreate, EmployeeUpdate, UserAdminCreate, UserAdminUpdate, UserRead
 
 router = APIRouter()
 MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
@@ -25,6 +25,24 @@ def list_users(
     _: Annotated[User, Depends(require_roles("admin"))],
 ) -> list[User]:
     return UserRepository(db).list_all()
+
+
+@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+def create_user(
+    payload: UserAdminCreate,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles("admin"))],
+) -> User:
+    repository = UserRepository(db)
+    if repository.get_by_email(payload.email):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    return repository.create(
+        payload,
+        hash_password(payload.password),
+        role=payload.role,
+        is_active=payload.is_active,
+    )
 
 
 @router.get("/employees", response_model=list[UserRead])
