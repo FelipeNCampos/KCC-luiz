@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.models.cashflow import CashFlowRecord
 from app.models.user import User
@@ -32,6 +32,28 @@ class CashFlowRepository:
     def get_by_id(self, record_id: int) -> CashFlowRecord | None:
         return self.db.get(CashFlowRecord, record_id)
 
+    def list_invoice_media(
+        self,
+        record_ids: list[int],
+    ) -> list[tuple[int, bytes, str]]:
+        if not record_ids:
+            return []
+
+        statement = select(
+            CashFlowRecord.id,
+            CashFlowRecord.invoice_media_data,
+            CashFlowRecord.invoice_media_mime,
+        ).where(
+            CashFlowRecord.id.in_(record_ids),
+            CashFlowRecord.invoice_media_data.is_not(None),
+            CashFlowRecord.invoice_media_mime.is_not(None),
+        )
+        return [
+            (record_id, media_data, media_mime)
+            for record_id, media_data, media_mime in self.db.execute(statement).all()
+            if media_data is not None and media_mime is not None
+        ]
+
     def delete(self, record: CashFlowRecord) -> None:
         self.db.delete(record)
         self.db.commit()
@@ -44,6 +66,7 @@ class CashFlowRepository:
     ) -> list[CashFlowRecord]:
         statement: Select[tuple[CashFlowRecord]] = (
             select(CashFlowRecord)
+            .options(defer(CashFlowRecord.invoice_media_data))
             .where(
                 CashFlowRecord.record_date >= month_start,
                 CashFlowRecord.record_date < month_end,
@@ -61,6 +84,7 @@ class CashFlowRepository:
     ) -> list[CashFlowRecord]:
         statement: Select[tuple[CashFlowRecord]] = (
             select(CashFlowRecord)
+            .options(defer(CashFlowRecord.invoice_media_data))
             .where(
                 CashFlowRecord.record_date >= start_date,
                 CashFlowRecord.record_date < end_date,
@@ -73,6 +97,7 @@ class CashFlowRepository:
     def list_all_records(self, cashflow_scope: str) -> list[CashFlowRecord]:
         statement: Select[tuple[CashFlowRecord]] = (
             select(CashFlowRecord)
+            .options(defer(CashFlowRecord.invoice_media_data))
             .where(CashFlowRecord.cashflow_scope == cashflow_scope)
             .order_by(CashFlowRecord.record_date.asc(), CashFlowRecord.id.asc())
         )
@@ -96,6 +121,7 @@ class CashFlowRepository:
     ) -> list[CashFlowRecord]:
         statement: Select[tuple[CashFlowRecord]] = (
             select(CashFlowRecord)
+            .options(defer(CashFlowRecord.invoice_media_data))
             .join(User, CashFlowRecord.created_by_user_id == User.id)
             .where(
                 CashFlowRecord.record_date >= start_date,

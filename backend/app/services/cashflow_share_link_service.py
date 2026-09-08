@@ -161,7 +161,7 @@ class CashFlowShareLinkService:
 
     def public_row(self, record: CashFlowRecord, token: str) -> CashFlowPublicRow:
         invoice_media_url = None
-        if record.has_invoice and record.invoice_media_data and record.invoice_media_mime:
+        if record.has_invoice and record.invoice_media_mime:
             invoice_media_url = f"/api/v1/cashflow/shared/{token}/records/{record.id}/invoice"
         return CashFlowPublicRow(
             record_date=record.record_date,

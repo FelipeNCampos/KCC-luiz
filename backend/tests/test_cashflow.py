@@ -897,6 +897,14 @@ def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
     assert invoice_response.headers["content-type"] == "application/pdf"
     assert len(PdfReader(BytesIO(invoice_response.content)).pages) == 1
 
+    preview_response = client.post(
+        "/api/v1/cashflow/report/preview",
+        headers=headers,
+        json={"start_month": "2026-04", "end_month": "2026-04"},
+    )
+    assert preview_response.status_code == 200
+    assert len(PdfReader(BytesIO(preview_response.content)).pages) == 1
+
 
 def test_system_invoice_can_be_retrieved_and_updated_without_recreating_cashflow_record(
     client: TestClient,

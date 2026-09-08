@@ -341,6 +341,7 @@ def preview_cashflow_report(
         search=payload.search,
         include_invoice_table=payload.include_invoice_table,
         fallback_month=payload.month,
+        include_invoice_media=False,
     )
     headers = {"Content-Disposition": f'inline; filename="cashflow-report-{period_label}.pdf"'}
     return Response(content=report_data, media_type="application/pdf", headers=headers)

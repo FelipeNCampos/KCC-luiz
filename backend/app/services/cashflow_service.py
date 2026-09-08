@@ -26,7 +26,7 @@ from app.schemas.cashflow import (
 )
 from app.services.email_service import EmailService
 
-PDF_INVOICE_RENDER_DPI = 200
+PDF_INVOICE_RENDER_DPI = 150
 
 
 class CashFlowService:
@@ -198,9 +198,7 @@ class CashFlowService:
                     id=record.id,
                     payment_number=dynamic_payment_number,
                     has_invoice=record.has_invoice,
-                    has_invoice_media=bool(
-                        record.invoice_media_data and record.invoice_media_mime
-                    ),
+                    has_invoice_media=bool(record.invoice_media_mime),
                     invoice_number=record.invoice_number,
                     invoice_media_name=record.invoice_media_name,
                     system_invoice_type=record.system_invoice_type,
@@ -459,6 +457,7 @@ class CashFlowService:
         search: str | None = None,
         include_invoice_table: bool = False,
         fallback_month: str | None = None,
+        include_invoice_media: bool = True,
     ) -> tuple[str, bytes]:
         period_label, period_start, period_end = self._parse_report_range(
             start_month=start_month,
@@ -469,7 +468,7 @@ class CashFlowService:
         )
         cashflow_scope = self._normalize_scope(scope)
         listing = self.list_range(period_label, period_start, period_end, search, cashflow_scope)
-        opening_balance = self.repository.get_balance_before(period_start, cashflow_scope)
+        opening_balance = listing.current_balance - listing.monthly_total
         closing_balance = opening_balance + listing.monthly_total
         report_data = self._build_report_pdf(
             listing,
@@ -479,6 +478,7 @@ class CashFlowService:
             search,
             include_invoice_table,
             self._scope_has_flat(cashflow_scope),
+            include_invoice_media,
         )
         return period_label, report_data
 
@@ -491,6 +491,7 @@ class CashFlowService:
         search: str | None,
         include_invoice_table: bool,
         include_flat_fields: bool,
+        include_invoice_media: bool,
     ) -> bytes:
         writer = PdfWriter()
         summary_pdf = self._build_report_summary_pdf(
@@ -505,21 +506,29 @@ class CashFlowService:
         for page in PdfReader(BytesIO(summary_pdf)).pages:
             writer.add_page(page)
 
-        for item in listing.items:
-            record = self.repository.get_by_id(item.id)
-            if (
-                not record
-                or not record.has_invoice
-                or not record.invoice_media_data
-                or not record.invoice_media_mime
-            ):
-                continue
-            self._append_media_pages(
-                writer,
-                record.invoice_media_data,
-                record.invoice_media_mime,
-                self._report_invoice_label(item.payment_number),
-            )
+        if include_invoice_media:
+            invoice_items = {
+                item.id: item
+                for item in listing.items
+                if item.has_invoice and item.has_invoice_media
+            }
+            media_by_id = {
+                record_id: (media_data, media_mime)
+                for record_id, media_data, media_mime in self.repository.list_invoice_media(
+                    list(invoice_items)
+                )
+            }
+            for item in listing.items:
+                media = media_by_id.get(item.id)
+                if media is None:
+                    continue
+                media_data, media_mime = media
+                self._append_media_pages(
+                    writer,
+                    media_data,
+                    media_mime,
+                    self._report_invoice_label(item.payment_number),
+                )
 
         output = BytesIO()
         writer.write(output)
@@ -778,30 +787,67 @@ class CashFlowService:
         fonts or layers. A rendered image preserves the page's visual result and
         makes the final report safe to print.
         """
-        document = pymupdf.open(stream=data, filetype="pdf")
+        source_document = pymupdf.open(stream=data, filetype="pdf")
+        rasterized_document = pymupdf.open()
         try:
-            if document.page_count == 0:
+            if source_document.page_count == 0:
                 raise ValueError("Invoice PDF has no pages")
 
-            for source_page in document:
+            page_width, page_height = A4
+            header_height = page_height * 0.07
+            content_x, content_y, content_width, content_height = (
+                CashFlowService._media_content_box()
+            )
+            target_rect = pymupdf.Rect(
+                content_x,
+                page_height - content_y - content_height,
+                content_x + content_width,
+                page_height - content_y,
+            )
+
+            for source_page in source_document:
                 pixmap = source_page.get_pixmap(
                     dpi=PDF_INVOICE_RENDER_DPI,
                     colorspace=pymupdf.csRGB,
                     alpha=False,
                 )
-                page_pdf = CashFlowService._image_to_centered_pdf_page(
-                    pixmap.tobytes("png"),
-                    invoice_label,
+                target_page = rasterized_document.new_page(
+                    width=page_width,
+                    height=page_height,
                 )
-                for page in PdfReader(BytesIO(page_pdf)).pages:
-                    writer.add_page(page)
+                target_page.insert_text(
+                    (10 * mm, header_height / 2),
+                    invoice_label,
+                    fontname="hebo",
+                    fontsize=12,
+                    color=(198 / 255, 40 / 255, 40 / 255),
+                )
+                target_page.insert_image(
+                    target_rect,
+                    pixmap=pixmap,
+                    keep_proportion=True,
+                )
+
+            rasterized_pdf = rasterized_document.tobytes(garbage=3, deflate=True)
+            for page in PdfReader(BytesIO(rasterized_pdf)).pages:
+                writer.add_page(page)
         finally:
-            document.close()
+            rasterized_document.close()
+            source_document.close()
 
     @staticmethod
     def _image_to_centered_pdf_page(data: bytes, invoice_label: str) -> bytes:
         output = BytesIO()
         page_width, page_height = A4
+        pdf = canvas.Canvas(output, pagesize=A4)
+        CashFlowService._draw_invoice_header(pdf, page_width, page_height, invoice_label)
+        CashFlowService._draw_centered_image(pdf, data)
+        pdf.showPage()
+        pdf.save()
+        return output.getvalue()
+
+    @staticmethod
+    def _draw_centered_image(pdf: canvas.Canvas, data: bytes) -> None:
         image = ImageReader(BytesIO(data))
         image_width, image_height = image.getSize()
         content_x, content_y, content_width, content_height = CashFlowService._media_content_box()
@@ -810,9 +856,6 @@ class CashFlowService:
         draw_height = image_height * scale
         x = content_x + (content_width - draw_width) / 2
         y = content_y + (content_height - draw_height) / 2
-
-        pdf = canvas.Canvas(output, pagesize=A4)
-        CashFlowService._draw_invoice_header(pdf, page_width, page_height, invoice_label)
         pdf.drawImage(
             image,
             x,
@@ -822,9 +865,6 @@ class CashFlowService:
             preserveAspectRatio=True,
             mask="auto",
         )
-        pdf.showPage()
-        pdf.save()
-        return output.getvalue()
 
     @staticmethod
     def _placeholder_pdf_page(message: str, invoice_label: str) -> bytes:
