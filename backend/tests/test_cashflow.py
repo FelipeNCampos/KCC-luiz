@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from io import BytesIO
+from unittest.mock import patch
 
 import pymupdf
 import pytest
@@ -15,6 +16,7 @@ from reportlab.platypus import Paragraph
 
 from app.core.config import settings
 from app.models.user import User
+from app.repositories.cashflow_repository import CashFlowRepository
 from app.services import cashflow_share_link_service
 from app.services.cashflow_service import CashFlowService
 
@@ -903,7 +905,66 @@ def test_invoice_media_upload_and_retrieval(client: TestClient) -> None:
         json={"start_month": "2026-04", "end_month": "2026-04"},
     )
     assert preview_response.status_code == 200
-    assert len(PdfReader(BytesIO(preview_response.content)).pages) == 1
+    preview_pages = PdfReader(BytesIO(preview_response.content)).pages
+    assert len(preview_pages) == 2
+    assert len(preview_pages[1].images) > 0
+
+
+@pytest.mark.parametrize("scope", ["main", "cashflow52"])
+@pytest.mark.parametrize("include_invoice_table", [False, True])
+def test_report_preview_includes_pdf_and_image_media_in_one_filtered_batch(
+    client: TestClient, scope: str, include_invoice_table: bool
+) -> None:
+    headers = {"Authorization": f"Bearer {get_admin_token(client)}"}
+    with pymupdf.open(stream=make_invoice_pdf(), filetype="pdf") as document:
+        image_data = document[0].get_pixmap().tobytes("png")
+
+    expected_ids = []
+    for description, record_date, record_scope, filename, data, mime in [
+        ("Selected PDF", "2026-04-10", scope, "invoice.pdf", make_invoice_pdf(), "application/pdf"),
+        ("Selected image", "2026-04-20", scope, "receipt.png", image_data, "image/png"),
+        ("Unrelated", "2026-04-15", scope, "other.pdf", make_invoice_pdf(), "application/pdf"),
+        ("Selected outside", "2026-04-21", scope, "outside.png", image_data, "image/png"),
+        (
+            "Selected other scope", "2026-04-15",
+            "cashflow52" if scope == "main" else "main",
+            "other.png", image_data, "image/png",
+        ),
+    ]:
+        response = client.post(
+            "/api/v1/cashflow",
+            headers=headers,
+            data={
+                "invoice": "Yes", "date": record_date, "scope": record_scope,
+                "value": "-10.00", "description": description,
+            },
+            files={"invoice_media": (filename, data, mime)},
+        )
+        assert response.status_code == 201
+        if description in ("Selected PDF", "Selected image"):
+            expected_ids.append(response.json()["id"])
+
+    with patch.object(
+        CashFlowRepository, "list_invoice_media", autospec=True,
+        side_effect=CashFlowRepository.list_invoice_media,
+    ) as load_media:
+        response = client.post(
+            "/api/v1/cashflow/report/preview",
+            headers=headers,
+            json={
+                "scope": scope, "date_from": "2026-04-10", "date_to": "2026-04-20",
+                "search": "Selected", "include_invoice_table": include_invoice_table,
+            },
+        )
+
+    assert response.status_code == 200
+    load_media.assert_called_once()
+    assert load_media.call_args.args[1] == expected_ids
+    pages = PdfReader(BytesIO(response.content)).pages
+    assert len(pages) == 3
+    for page in pages[1:]:
+        assert len(page.images) > 0
+        assert "Unable to render" not in page.extract_text()
 
 
 def test_system_invoice_can_be_retrieved_and_updated_without_recreating_cashflow_record(

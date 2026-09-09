@@ -457,7 +457,6 @@ class CashFlowService:
         search: str | None = None,
         include_invoice_table: bool = False,
         fallback_month: str | None = None,
-        include_invoice_media: bool = True,
     ) -> tuple[str, bytes]:
         period_label, period_start, period_end = self._parse_report_range(
             start_month=start_month,
@@ -478,7 +477,6 @@ class CashFlowService:
             search,
             include_invoice_table,
             self._scope_has_flat(cashflow_scope),
-            include_invoice_media,
         )
         return period_label, report_data
 
@@ -491,7 +489,6 @@ class CashFlowService:
         search: str | None,
         include_invoice_table: bool,
         include_flat_fields: bool,
-        include_invoice_media: bool,
     ) -> bytes:
         writer = PdfWriter()
         summary_pdf = self._build_report_summary_pdf(
@@ -506,29 +503,26 @@ class CashFlowService:
         for page in PdfReader(BytesIO(summary_pdf)).pages:
             writer.add_page(page)
 
-        if include_invoice_media:
-            invoice_items = {
-                item.id: item
-                for item in listing.items
-                if item.has_invoice and item.has_invoice_media
-            }
-            media_by_id = {
-                record_id: (media_data, media_mime)
-                for record_id, media_data, media_mime in self.repository.list_invoice_media(
-                    list(invoice_items)
-                )
-            }
-            for item in listing.items:
-                media = media_by_id.get(item.id)
-                if media is None:
-                    continue
-                media_data, media_mime = media
-                self._append_media_pages(
-                    writer,
-                    media_data,
-                    media_mime,
-                    self._report_invoice_label(item.payment_number),
-                )
+        # Invoice media is required in both previews and emailed reports.
+        # Fetch only the filtered records' attachments in one batch.
+        invoice_ids = [
+            item.id for item in listing.items if item.has_invoice and item.has_invoice_media
+        ]
+        media_by_id = {
+            record_id: (media_data, media_mime)
+            for record_id, media_data, media_mime in self.repository.list_invoice_media(invoice_ids)
+        }
+        for item in listing.items:
+            media = media_by_id.get(item.id)
+            if media is None:
+                continue
+            media_data, media_mime = media
+            self._append_media_pages(
+                writer,
+                media_data,
+                media_mime,
+                self._report_invoice_label(item.payment_number),
+            )
 
         output = BytesIO()
         writer.write(output)
