@@ -981,7 +981,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
               <tr>
                 <th className="px-4 py-3 font-extrabold">Invoice No</th>
                 <th className="px-4 py-3 font-extrabold">Invoice</th>
-                <th className="px-4 py-3 font-extrabold">Date</th>
+                <th className="w-px whitespace-nowrap px-4 py-3 font-extrabold">Date</th>
                 <th className="px-4 py-3 font-extrabold text-right">Amount</th>
                 <th className="px-4 py-3 font-extrabold">Description</th>
                 <th className="px-4 py-3 font-extrabold">Notes</th>
@@ -1040,7 +1040,7 @@ export function CashFlowPage({ title = "CashFlow", scope = "main", showFlat = tr
                             <span className="font-extrabold">View</span>
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-black/65">{formatDate(row.record_date)}</td>
                         <td
                           className={`px-4 py-3 text-right text-sm font-extrabold ${Number(row.amount) >= 0 ? "text-emerald-700" : "text-[#cf0e0e]"}`}
                         >
