@@ -188,6 +188,7 @@ function draftItems(
 
 function buildInvoiceDocumentData(params: {
   invoiceDate: string;
+  dueDate: string;
   invoiceNumber: string;
   title: string;
   to: string;
@@ -237,7 +238,7 @@ function buildInvoiceDocumentData(params: {
     title: params.title.trim(),
     pricingMode: params.pricingMode,
     issuedDate: formattedDate,
-    dueDate: formattedDate,
+    dueDate: formatDisplayDate(params.dueDate || fallbackDate),
     terms: "Due on receipt",
     invoiceToLines,
     flatLabel,
@@ -649,6 +650,7 @@ export function InvoiceModal({
   onUpdated,
 }: InvoiceModalProps) {
   const [invoiceDate, setInvoiceDate] = useState(() => toDateInputValue(new Date()));
+  const [dueDate, setDueDate] = useState(() => toDateInputValue(new Date()));
   const [to, setTo] = useState("");
   const [flat, setFlat] = useState<string[]>([]);
   const [items, setItems] = useState<InvoiceItem[]>(() => [newInvoiceItem(toDateInputValue(new Date()), defaultDescription)]);
@@ -687,6 +689,7 @@ export function InvoiceModal({
 
     const nextDate = draftString(editingDraft, "invoiceDate", toDateInputValue(new Date()));
     setInvoiceDate(nextDate);
+    setDueDate(draftString(editingDraft, "dueDate", nextDate));
     setTo(draftString(editingDraft, "to"));
     setFlat(draftFlats(editingDraft));
     setItems(draftItems(editingDraft, nextDate, defaultDescription));
@@ -737,6 +740,7 @@ export function InvoiceModal({
     () =>
       buildInvoiceDocumentData({
         invoiceDate,
+        dueDate,
         invoiceNumber,
         title,
         to,
@@ -749,7 +753,7 @@ export function InvoiceModal({
         accountNumber,
         reference,
       }),
-    [accountName, accountNumber, flat, invoiceDate, invoiceNumber, items, pricingMode, reference, sortCode, title, to, totalValue]
+    [accountName, accountNumber, dueDate, flat, invoiceDate, invoiceNumber, items, pricingMode, reference, sortCode, title, to, totalValue]
   );
 
   const previewHtml = useMemo(
@@ -1125,6 +1129,7 @@ export function InvoiceModal({
       const cashflowName = scope === "main" ? "Cashflow penthouse" : "Cashflow 52";
       const systemInvoiceData = {
         invoiceDate,
+        dueDate,
         invoiceNumber: normalizedInvoiceNumber,
         title,
         to,
@@ -1206,6 +1211,16 @@ export function InvoiceModal({
                         type="date"
                         value={invoiceDate}
                         onChange={(event) => setInvoiceDate(event.target.value)}
+                      />
+                    </label>
+
+                    <label className="grid gap-1.5">
+                      <span className="oak-label">Due date</span>
+                      <input
+                        className="oak-input !min-h-10 !px-3 !py-2"
+                        type="date"
+                        value={dueDate}
+                        onChange={(event) => setDueDate(event.target.value)}
                       />
                     </label>
 

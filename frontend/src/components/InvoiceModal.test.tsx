@@ -66,6 +66,68 @@ describe("invoice cashflow destination", () => {
 
   afterEach(cleanup);
 
+  describe.each([
+    { name: "cleaner", Component: InvoiceModal },
+    { name: "contractor", Component: InvoiceModalContractor },
+  ])("$name due date", ({ Component }) => {
+    it("uses independent invoice and due dates in the preview, PDF and saved draft", async () => {
+      render(<Component open sourceLabel="Invoice" defaultDescription="Service" onClose={vi.fn()} />);
+
+      fireEvent.change(screen.getByLabelText("Invoice date"), { target: { value: "2026-11-09" } });
+      fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2026-12-01" } });
+      fireEvent.change(screen.getByLabelText("Invoice date"), { target: { value: "2026-11-10" } });
+      expect((screen.getByLabelText("Due date") as HTMLInputElement).value).toBe("2026-12-01");
+
+      const preview = screen.getByTitle("Invoice preview") as HTMLIFrameElement;
+      expect(preview.srcdoc).toContain("10/11/2026");
+      expect(preview.srcdoc).toContain("01/12/2026");
+      completeInvoice();
+      fireEvent.click(screen.getByRole("button", { name: "Penthouse" }));
+
+      await waitFor(() => expect(cashFlowService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          date: "2026-11-10",
+          systemInvoiceData: expect.objectContaining({ invoiceDate: "2026-11-10", dueDate: "2026-12-01" }),
+        })
+      ));
+      expect(pdfTextCalls.calls).toEqual(expect.arrayContaining([
+        expect.objectContaining({ content: ["10/11/2026"] }),
+        expect.objectContaining({ content: ["01/12/2026"] }),
+      ]));
+    });
+
+    it("restores and saves the due date when editing an invoice", async () => {
+      render(<Component
+        open sourceLabel="Invoice" defaultDescription="Service" onClose={vi.fn()}
+        editingRecordId={42} editingScope="main"
+        editingDraft={{
+          invoiceDate: "2026-11-09", dueDate: "2026-12-01", invoiceNumber: "Inv-0042",
+          pricingMode: "invoice_total", invoiceTotalInput: "120",
+        }}
+      />);
+
+      expect((screen.getByLabelText("Due date") as HTMLInputElement).value).toBe("2026-12-01");
+      fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2026-12-15" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save invoice changes" }));
+
+      await waitFor(() => expect(cashFlowService.updateSystemInvoice).toHaveBeenCalledWith(
+        42, expect.objectContaining({
+          systemInvoiceData: expect.objectContaining({ dueDate: "2026-12-15" }),
+        })
+      ));
+    });
+
+    it("defaults legacy invoices without a due date to their invoice date", () => {
+      render(<Component
+        open sourceLabel="Invoice" defaultDescription="Service" onClose={vi.fn()}
+        editingRecordId={42} editingScope="main"
+        editingDraft={{ invoiceDate: "2026-04-10" }}
+      />);
+
+      expect((screen.getByLabelText("Due date") as HTMLInputElement).value).toBe("2026-04-10");
+    });
+  });
+
   it("sends a cleaner invoice to Cashflow 52 and keeps download icon-only", async () => {
     render(
       <InvoiceModal
